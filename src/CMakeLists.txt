@@ -12,6 +12,14 @@ set_source_files_properties(main.c PROPERTIES
 # Link libraries
 target_link_libraries(mapper
     pico_stdlib
+    pico_multicore
+    pico_float
+    pico_double
+    hardware_pio
+    hardware_i2c
+    BNO08x_Pico_Library
+    dwm_pico_as5600
+    no-OS-FatFS-SD-SDIO-SPI-RPi-Pico
     project_common
 )
 

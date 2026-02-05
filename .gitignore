@@ -24,6 +24,9 @@ compile_commands.json
 .pio/
 platformio.ini
 
+# Clangd cache
+.cache/
+
 # OS files
 .DS_Store
 .DS_Store?
