@@ -1,0 +1,64 @@
+---
+# Clang-Format style for RP2350 safety-critical firmware
+# Based on LLVM with embedded C conventions
+
+BasedOnStyle: LLVM
+Language: Cpp
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+IndentCaseLabels: true
+IndentPPDirectives: BeforeHash
+
+# Line length
+ColumnLimit: 100
+
+# Braces (K&R style - consistent, high readability)
+BreakBeforeBraces: Attach
+
+# Function formatting
+AllowShortFunctionsOnASingleLine: None
+AlwaysBreakAfterReturnType: None
+
+# Control flow formatting
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+# Pointer/reference alignment (embedded convention)
+PointerAlignment: Right
+DerivePointerAlignment: false
+
+# Include sorting
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Project headers
+  - Regex:           '^"(drivers|logic|utils|libs)/'
+    Priority:        1
+  # Pico SDK main headers
+  - Regex:           '^"pico/'
+    Priority:        2
+  # Hardware-specific headers
+  - Regex:           '^"hardware/'
+    Priority:        3
+  # Standard C/C++ headers
+  - Regex:           '^<.*'
+    Priority:        4
+
+# Spacing
+SpaceAfterCStyleCast: true
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Alignment
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands: true
+
+# Other
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
