@@ -85,7 +85,29 @@ typedef struct {
 } navigation_state_t;
 
 /* Compile-time verification of struct layout */
+#ifdef __cplusplus
+static_assert(sizeof(navigation_state_t) == 56U,
+              "navigation_state_t must be exactly 56 bytes for defined memory layout");
+#else
 _Static_assert(sizeof(navigation_state_t) == 56U,
                "navigation_state_t must be exactly 56 bytes for defined memory layout");
+#endif
+
+/*============================================================================
+ * Sensor Data Types
+ *============================================================================*/
+
+typedef struct {
+    float x;
+    float y;
+    float z;
+    float w;
+} Quat;
+
+typedef struct {
+    float x;
+    float y;
+    float z;
+} Vec3;
 
 #endif /* MAPPER_TYPES_H */
