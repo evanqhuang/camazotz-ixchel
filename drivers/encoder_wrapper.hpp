@@ -22,6 +22,9 @@ class Encoder_Wrapper {
 public:
     bool init();
     float get_angle_delta();
+    bool check_magnet_present();
+    bool set_zero_offset();
+    uint16_t get_zero_offset() const;
 
     uint16_t consecutive_failures = 0;
 
@@ -31,10 +34,12 @@ private:
     static constexpr uint16_t TICKS_PER_REV = 4096;
     static constexpr float TICKS_TO_RAD = (2.0f * 3.14159265358979f) / 4096.0f;
     static constexpr int16_t HALF_REV = 2048;
+    static constexpr uint32_t I2C_TIMEOUT_US = 5000;
 
     as5600_t encoder_ = {};
     uint16_t last_raw_angle_ = 0;
     bool first_read_ = true;
+    uint16_t zero_offset_ = 0;
 
     bool read_raw_angle(uint16_t *out);
 };

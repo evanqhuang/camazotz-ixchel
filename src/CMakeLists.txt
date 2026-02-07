@@ -1,16 +1,27 @@
 # Mapper executable
 add_executable(mapper
-    main.c
+    main.cpp
     ../drivers/encoder_wrapper.cpp
     ../drivers/imu_wrapper.cpp
+    ../drivers/pio_i2c.cpp
+    ../drivers/depth_wrapper.cpp
+    ../logic/calibration_manager.cpp
+    ../utils/stdio_display.cpp
 )
+
+# Generate PIO header from assembly
+pico_generate_pio_header(mapper ${CMAKE_CURRENT_LIST_DIR}/../drivers/pio_i2c.pio)
 
 # Apply strict warning flags only to our source files
 string(REPLACE ";" " " PROJECT_FLAGS_STR "${PROJECT_WARNING_FLAGS};${PROJECT_SAFETY_FLAGS}")
 set_source_files_properties(
-    main.c
+    main.cpp
     ../drivers/encoder_wrapper.cpp
     ../drivers/imu_wrapper.cpp
+    ../drivers/pio_i2c.cpp
+    ../drivers/depth_wrapper.cpp
+    ../logic/calibration_manager.cpp
+    ../utils/stdio_display.cpp
     PROPERTIES COMPILE_FLAGS "${PROJECT_FLAGS_STR}"
 )
 
@@ -23,6 +34,7 @@ target_link_libraries(mapper
     hardware_pio
     hardware_i2c
     hardware_irq
+    hardware_clocks
     BNO08x_Pico_Library
     dwm_pico_as5600
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico

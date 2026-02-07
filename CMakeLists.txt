@@ -50,6 +50,24 @@ FetchContent_Declare(bno08x
 )
 FetchContent_MakeAvailable(bno08x)
 
+# Patch BNO08x library bugs:
+# 1. handleI2CError() clobbers i2c_port to i2c_default and reconfigures GP4/GP5
+# 2. I2C_TIMEOUT_US is only 5ms — too short for BNO085 clock stretching
+FetchContent_GetProperties(bno08x SOURCE_DIR BNO08X_SRC_DIR)
+file(READ "${BNO08X_SRC_DIR}/src/utils.cpp" _bno08x_utils_cpp)
+string(REPLACE
+    "initI2C(i2c_port, true); // Force recovery on the nth attempt"
+    "(void)i2c_port; return; // PATCHED: initI2C clobbers port to i2c0"
+    _bno08x_utils_cpp "${_bno08x_utils_cpp}")
+file(WRITE "${BNO08X_SRC_DIR}/src/utils.cpp" "${_bno08x_utils_cpp}")
+
+file(READ "${BNO08X_SRC_DIR}/include/utils.h" _bno08x_utils_h)
+string(REPLACE
+    "inline uint I2C_TIMEOUT_US = 5000;"
+    "inline uint I2C_TIMEOUT_US = 100000;  // PATCHED: 100ms for clock stretching"
+    _bno08x_utils_h "${_bno08x_utils_h}")
+file(WRITE "${BNO08X_SRC_DIR}/include/utils.h" "${_bno08x_utils_h}")
+
 # AS5600 Encoder (dancesWithMachines) — no CMake target upstream
 # Root CMakeLists.txt calls pico_sdk_init(), so Populate is used to skip it
 FetchContent_Declare(as5600

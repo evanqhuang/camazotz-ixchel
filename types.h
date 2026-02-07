@@ -110,4 +110,38 @@ typedef struct {
     float z;
 } Vec3;
 
+/*============================================================================
+ * Calibration Types (C++ only)
+ *============================================================================*/
+#ifdef __cplusplus
+
+static constexpr uint8_t CALIB_MAX_ERROR_LEN = 64;
+
+enum class CalibrationStatus : uint8_t { NotRun, Success, Warning, Failed };
+
+struct SensorCalibResult {
+    CalibrationStatus status = CalibrationStatus::NotRun;
+    char error_msg[CALIB_MAX_ERROR_LEN] = {};
+};
+
+struct CalibrationResult {
+    SensorCalibResult encoder;
+    SensorCalibResult imu;
+    SensorCalibResult depth;
+
+    bool all_passed() const {
+        return encoder.status == CalibrationStatus::Success &&
+               imu.status == CalibrationStatus::Success &&
+               depth.status == CalibrationStatus::Success;
+    }
+
+    bool any_fatal() const {
+        return encoder.status == CalibrationStatus::Failed ||
+               imu.status == CalibrationStatus::Failed ||
+               depth.status == CalibrationStatus::Failed;
+    }
+};
+
+#endif /* __cplusplus */
+
 #endif /* MAPPER_TYPES_H */

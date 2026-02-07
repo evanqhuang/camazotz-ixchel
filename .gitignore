@@ -47,3 +47,5 @@ platformio.ini
 *.uf2
 *.dis
 *.map
+
+RP2350-Touch-AMOLED-1.64-LVGL/

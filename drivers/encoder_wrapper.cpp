@@ -36,11 +36,14 @@ float Encoder_Wrapper::get_angle_delta() {
     uint16_t current_raw = 0;
 
     if (!read_raw_angle(&current_raw)) {
-        consecutive_failures++;
+        if (consecutive_failures < UINT16_MAX) { consecutive_failures++; }
         return 0.0f;
     }
 
     consecutive_failures = 0;
+
+    // Apply zero offset calibration
+    current_raw = (current_raw - zero_offset_) & 0x0FFFU;
 
     if (first_read_) {
         first_read_ = false;
@@ -68,15 +71,17 @@ bool Encoder_Wrapper::read_raw_angle(uint16_t *out) {
     uint8_t buf[2] = {0, 0};
 
     // Write register address with repeated start (nostop=true)
-    // Returns number of bytes written or PICO_ERROR_GENERIC (-1) on failure
-    int ret = i2c_write_blocking(encoder_.i2c_inst, AS5600_ADDR, &reg, 1, true);
+    // Returns number of bytes written or PICO_ERROR_GENERIC/PICO_ERROR_TIMEOUT on failure
+    int ret = i2c_write_timeout_us(encoder_.i2c_inst, AS5600_ADDR, &reg, 1,
+                                    true, I2C_TIMEOUT_US);
     if (ret < 0) {
         return false;
     }
 
     // Read 2 bytes of angle data
-    // Returns number of bytes read or PICO_ERROR_GENERIC (-1) on failure
-    ret = i2c_read_blocking(encoder_.i2c_inst, AS5600_ADDR, buf, 2, false);
+    // Returns number of bytes read or PICO_ERROR_GENERIC/PICO_ERROR_TIMEOUT on failure
+    ret = i2c_read_timeout_us(encoder_.i2c_inst, AS5600_ADDR, buf, 2,
+                               false, I2C_TIMEOUT_US);
     if (ret < 0) {
         return false;
     }
@@ -87,4 +92,23 @@ bool Encoder_Wrapper::read_raw_angle(uint16_t *out) {
     *out &= 0x0FFFU; // Mask to 12 bits (0-4095)
 
     return true;
+}
+
+bool Encoder_Wrapper::check_magnet_present() {
+    as5600_status_t status = as5600_read_status(&encoder_);
+    // MD bit (1 << 5) indicates magnet detected
+    return (status & MD) != 0;
+}
+
+bool Encoder_Wrapper::set_zero_offset() {
+    uint16_t raw = 0;
+    if (!read_raw_angle(&raw)) {
+        return false;
+    }
+    zero_offset_ = raw;
+    return true;
+}
+
+uint16_t Encoder_Wrapper::get_zero_offset() const {
+    return zero_offset_;
 }
