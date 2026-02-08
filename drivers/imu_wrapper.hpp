@@ -46,7 +46,7 @@ private:
     static constexpr uint16_t SHTP_DRAIN_BUF_SIZE = 256;
 
     BNO08x imu_;
-    Quat cached_quat_ = {0.0f, 0.0f, 0.0f, 1.0f};
+    Quat cached_quat_ = {1.0f, 0.0f, 0.0f, 0.0f};
     Vec3 cached_angular_vel_ = {0.0f, 0.0f, 0.0f};
 
     void bus_recovery();

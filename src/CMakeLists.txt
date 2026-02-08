@@ -6,6 +6,7 @@ add_executable(mapper
     ../drivers/pio_i2c.cpp
     ../drivers/depth_wrapper.cpp
     ../logic/calibration_manager.cpp
+    ../logic/nav_math.cpp
     ../utils/stdio_display.cpp
 )
 
@@ -21,6 +22,7 @@ set_source_files_properties(
     ../drivers/pio_i2c.cpp
     ../drivers/depth_wrapper.cpp
     ../logic/calibration_manager.cpp
+    ../logic/nav_math.cpp
     ../utils/stdio_display.cpp
     PROPERTIES COMPILE_FLAGS "${PROJECT_FLAGS_STR}"
 )

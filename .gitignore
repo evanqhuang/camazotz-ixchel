@@ -49,3 +49,9 @@ platformio.ini
 *.map
 
 RP2350-Touch-AMOLED-1.64-LVGL/
+
+# Test build output
+test/build/
+
+# Claude Code hooks (per-user, ephemeral)
+.claude/hooks/

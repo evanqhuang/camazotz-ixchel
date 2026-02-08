@@ -98,10 +98,10 @@ _Static_assert(sizeof(navigation_state_t) == 56U,
  *============================================================================*/
 
 typedef struct {
+    float w;
     float x;
     float y;
     float z;
-    float w;
 } Quat;
 
 typedef struct {

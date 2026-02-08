@@ -56,4 +56,9 @@
 #define CALIB_IMU_MIN_ACCURACY          2U      /* Minimum acceptable accuracy (0-3) */
 #define CALIB_DEPTH_CRC_MAX_RETRIES     3U      /* PROM CRC retry attempts */
 
+/*============================================================================
+ * Encoder Wheel Geometry
+ *============================================================================*/
+#define ENCODER_WHEEL_RADIUS_M  0.025f   /* Measuring wheel radius (meters) */
+
 #endif /* MAPPER_CONFIG_H */
