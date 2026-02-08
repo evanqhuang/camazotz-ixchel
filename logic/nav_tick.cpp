@@ -48,16 +48,43 @@ __not_in_flash_func(uint8_t) nav_tick_update(NavTickState &state,
         encoder_delta = delta_dist / ENCODER_WHEEL_RADIUS_M;
     }
 
-    /* IMU fallback logic */
+    /* IMU tiered recovery */
     if (snap.imu_valid) {
         quat = snap.imu_quaternion;
         state.last_good_quat = quat;
+        state.last_angular_velocity = snap.imu_angular_velocity;
         state.imu_fail_streak = 0;
+        state.imu_reset_requested = false;
+        state.action_flags &= ~NAV_ACTION_IMU_RESET;
     } else {
-        quat = state.last_good_quat;
         if (state.imu_fail_streak < UINT16_MAX) {
             state.imu_fail_streak++;
         }
+
+        if (state.imu_fail_streak < NAV_IMU_TIER1_THRESHOLD) {
+            /* Tier 1: Extrapolate orientation via angular velocity */
+            quaternion_extrapolate(&state.last_good_quat,
+                                   &state.last_angular_velocity,
+                                   dt_s, &quat);
+            state.last_good_quat = quat;
+        } else if (state.imu_fail_streak < NAV_IMU_TIER3_THRESHOLD) {
+            /* Tier 2: Hold last orientation */
+            quat = state.last_good_quat;
+        } else {
+            /* Tier 3: Hold last orientation, request hardware reset once */
+            quat = state.last_good_quat;
+            if (!state.imu_reset_requested) {
+                state.action_flags |= NAV_ACTION_IMU_RESET;
+                state.imu_reset_requested = true;
+            }
+        }
+    }
+
+    /* IMU distance throttle (applied after encoder recovery) */
+    if (state.imu_fail_streak >= NAV_IMU_TIER3_THRESHOLD) {
+        delta_dist = 0.0f;
+    } else if (state.imu_fail_streak >= NAV_IMU_TIER1_THRESHOLD) {
+        delta_dist *= NAV_IMU_DIST_THROTTLE;
     }
 
     /* Build status flags */
@@ -72,8 +99,11 @@ __not_in_flash_func(uint8_t) nav_tick_update(NavTickState &state,
     if (state.imu_fail_streak > 0) {
         status_flags |= NAV_FLAG_IMU_ESTIMATED;
     }
+    if (state.imu_fail_streak >= NAV_IMU_TIER3_THRESHOLD) {
+        status_flags |= NAV_FLAG_IMU_LOST;
+    }
     if (state.encoder_fail_streak >= NAV_CRITICAL_FAIL_THRESHOLD ||
-        state.imu_fail_streak >= NAV_CRITICAL_FAIL_THRESHOLD) {
+        state.imu_fail_streak >= NAV_IMU_TIER3_THRESHOLD) {
         status_flags |= NAV_FLAG_NAV_CRITICAL;
     }
 

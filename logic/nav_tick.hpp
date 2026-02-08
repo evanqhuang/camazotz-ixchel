@@ -33,12 +33,15 @@ struct SensorSnapshot {
 struct NavTickState {
     double pos_x = 0.0, pos_y = 0.0, pos_z = 0.0;
     Quat last_good_quat = {1.0f, 0.0f, 0.0f, 0.0f};
+    Vec3 last_angular_velocity = {0.0f, 0.0f, 0.0f};
     float last_good_encoder_delta = 0.0f;
     uint16_t encoder_fail_streak = 0;
     uint16_t imu_fail_streak = 0;
     uint32_t tick_count = 0;
     float last_velocity = 0.0f;    // m/s from last successful encoder read
     double total_distance = 0.0;   // cumulative path length (meters)
+    uint8_t action_flags = 0;      // consumed by core1_nav.cpp (NAV_ACTION_*)
+    bool imu_reset_requested = false; // prevents re-requesting reset each tick
 };
 
 /*============================================================================

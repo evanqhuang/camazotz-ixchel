@@ -50,6 +50,12 @@ __not_in_flash_func(void) core1_entry() {
         nav_state_compact_t compact = {};
         nav_tick_update(state, snap, &compact);
 
+        if (state.action_flags & NAV_ACTION_IMU_RESET) {
+            watchdog_update();
+            imu->hardware_reset();
+            state.action_flags &= ~NAV_ACTION_IMU_RESET;
+        }
+
         uint32_t irq_state = spin_lock_blocking(nav_lock);
         shared_state = compact;
         spin_unlock(nav_lock, irq_state);

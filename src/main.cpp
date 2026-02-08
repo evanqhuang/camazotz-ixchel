@@ -166,6 +166,13 @@ int main() {
             JitterStats jitter = core1_get_jitter_stats();
             uint32_t drops = core1_get_dropped_frames();
 
+            if (nav.status_flags & NAV_FLAG_IMU_LOST) {
+                display.show_error("NAV", "IMU LOST - NAV CRITICAL",
+                                   DisplaySeverity::Fatal);
+            }
+
+            /* TODO: SD logging for IMU recovery events when logging infrastructure exists */
+
             printf("[heartbeat] uptime=%lu ms  pos=(%.4f, %.4f, %.4f)  "
                    "flags=0x%02X  jitter=%lu/%lu/%lu us  drops=%lu\n",
                    static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())),

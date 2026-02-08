@@ -407,3 +407,91 @@ TEST(ExtractHeadingPitch, FullPipelineRoundtrip) {
     EXPECT_NEAR(heading, M_PI / 4.0, 1e-7);
     EXPECT_DOUBLE_NEAR(pitch, 0.0);
 }
+
+// ============================================================================
+// Test Suite: QuaternionExtrapolate
+// ============================================================================
+
+TEST(QuaternionExtrapolate, ZeroOmegaReturnsInput) {
+    Quat q_curr = {1.0f, 0.0f, 0.0f, 0.0f};
+    Vec3 omega = {0.0f, 0.0f, 0.0f};
+    Quat q_out;
+
+    quaternion_extrapolate(&q_curr, &omega, 0.01f, &q_out);
+
+    // With zero omega, quaternion should remain unchanged (identity)
+    EXPECT_NEAR(q_out.w, 1.0f, 1e-6f);
+    EXPECT_NEAR(q_out.x, 0.0f, 1e-6f);
+    EXPECT_NEAR(q_out.y, 0.0f, 1e-6f);
+    EXPECT_NEAR(q_out.z, 0.0f, 1e-6f);
+}
+
+TEST(QuaternionExtrapolate, PureYawRotation) {
+    Quat q_curr = {1.0f, 0.0f, 0.0f, 0.0f};
+    Vec3 omega = {0.0f, 0.0f, 1.0f};  // 1 rad/s yaw
+    Quat q_out;
+
+    quaternion_extrapolate(&q_curr, &omega, 0.01f, &q_out);
+
+    // For omega_z=1.0, dt=0.01, we expect:
+    // Pure yaw quaternion: (0, 0, 0, 1) represents the angular velocity
+    // Hamilton product: q + 0.5*dt*(0,0,0,1)*q
+    // q_dot has components: pw = 0.5*dt*0*1 = 0, pz = 0.5*dt*1*1 = 0.005
+    // After normalization: w slightly less than 1.0, z slightly greater than 0
+    EXPECT_LT(q_out.w, 1.0f);
+    EXPECT_GT(q_out.z, 0.0f);
+
+    // Verify rotation is in the expected direction (positive yaw)
+    EXPECT_NEAR(q_out.x, 0.0f, 1e-6f);
+    EXPECT_NEAR(q_out.y, 0.0f, 1e-6f);
+}
+
+TEST(QuaternionExtrapolate, OutputIsUnitLength) {
+    // Arbitrary non-identity quaternion
+    Quat q_curr = {0.9f, 0.1f, 0.2f, 0.3f};
+    // Arbitrary angular velocity
+    Vec3 omega = {0.5f, -0.3f, 0.7f};
+    Quat q_out;
+
+    quaternion_extrapolate(&q_curr, &omega, 0.01f, &q_out);
+
+    // Verify output is unit length
+    float norm = std::sqrt(q_out.w * q_out.w + q_out.x * q_out.x +
+                           q_out.y * q_out.y + q_out.z * q_out.z);
+    EXPECT_NEAR(norm, 1.0f, 1e-6f);
+}
+
+TEST(QuaternionExtrapolate, DegenerateInputFallsBackToIdentity) {
+    // Zero quaternion (degenerate)
+    Quat q_curr = {0.0f, 0.0f, 0.0f, 0.0f};
+    Vec3 omega = {1.0f, 1.0f, 1.0f};
+    Quat q_out;
+
+    quaternion_extrapolate(&q_curr, &omega, 0.01f, &q_out);
+
+    // Degenerate guard should trigger, returning identity
+    EXPECT_NEAR(q_out.w, 1.0f, 1e-6f);
+    EXPECT_NEAR(q_out.x, 0.0f, 1e-6f);
+    EXPECT_NEAR(q_out.y, 0.0f, 1e-6f);
+    EXPECT_NEAR(q_out.z, 0.0f, 1e-6f);
+}
+
+TEST(QuaternionExtrapolate, LargeOmegaNormalizes) {
+    Quat q_curr = {1.0f, 0.0f, 0.0f, 0.0f};
+    // Very large angular velocity (100 rad/s)
+    Vec3 omega = {100.0f, 100.0f, 100.0f};
+    Quat q_out;
+
+    quaternion_extrapolate(&q_curr, &omega, 0.01f, &q_out);
+
+    // Even with large omega, output should be normalized
+    float norm = std::sqrt(q_out.w * q_out.w + q_out.x * q_out.x +
+                           q_out.y * q_out.y + q_out.z * q_out.z);
+    EXPECT_NEAR(norm, 1.0f, 1e-6f);
+
+    // Verify no component is NaN or Inf
+    EXPECT_TRUE(std::isfinite(q_out.w));
+    EXPECT_TRUE(std::isfinite(q_out.x));
+    EXPECT_TRUE(std::isfinite(q_out.y));
+    EXPECT_TRUE(std::isfinite(q_out.z));
+}

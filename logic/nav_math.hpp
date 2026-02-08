@@ -46,6 +46,19 @@ void integrate_position(double *pos_x, double *pos_y, double *pos_z,
                         double dx, double dy, double dz);
 
 /*============================================================================
+ * Quaternion Extrapolation (Euler Step)
+ *============================================================================
+ * Predicts next orientation from current quaternion and angular velocity.
+ * Uses first-order Euler integration: q_next = normalize(q + 0.5*omega_pure*q*dt)
+ * where omega_pure = (0, wx, wy, wz) as a Hamilton quaternion product.
+ *
+ * Degenerate guard: if result norm < 1e-9, outputs identity quaternion.
+ * SRAM placement for Core 1 deterministic timing.
+ */
+void quaternion_extrapolate(const Quat *q_curr, const Vec3 *omega,
+                            float dt, Quat *q_out);
+
+/*============================================================================
  * Extract Heading and Pitch
  *============================================================================
  * Extracts yaw (heading) and pitch from rotation matrix using gimbal-lock-safe

@@ -568,7 +568,714 @@ TEST(NavTickUpdate_IMURecovery, CriticalThresholdSetsFlag) {
 
     uint8_t flags = nav_tick_update(state, snap, &out);
     EXPECT_EQ(state.imu_fail_streak, NAV_CRITICAL_FAIL_THRESHOLD);
-    EXPECT_EQ(flags, NAV_FLAG_IMU_ESTIMATED | NAV_FLAG_NAV_CRITICAL);
+    EXPECT_EQ(flags, NAV_FLAG_IMU_ESTIMATED | NAV_FLAG_NAV_CRITICAL | NAV_FLAG_IMU_LOST);
+}
+
+// ============================================================================
+// Test Suite: NavTickUpdate_IMUTieredRecovery
+// ============================================================================
+
+// Helper: Create a failed IMU snapshot
+static SensorSnapshot make_imu_fail_snap() {
+    return {
+        .encoder_delta = 1.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false
+    };
+}
+
+// Tier 1 Tests (streak 1-4): Extrapolation via angular velocity
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier1_ExtrapolatesWithAngularVelocity) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: One good read with non-zero angular velocity (1 rad/s yaw)
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 1.0f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Record the starting quaternion (identity)
+    Quat quat_before = state.last_good_quat;
+    EXPECT_FLOAT_NEAR(quat_before.w, 1.0f);
+    EXPECT_FLOAT_NEAR(quat_before.z, 0.0f);
+
+    // Fail 1 tick (Tier 1): should extrapolate using omega_z = 1.0
+    nav_tick_update(state, make_imu_fail_snap(), &out);
+
+    // Verify quaternion changed (extrapolated)
+    // For omega_z=1.0, dt=0.01, extrapolation does: q_out = q + 0.5*dt*(0,0,0,1)*q
+    // After normalization, w should decrease slightly and z should increase
+    EXPECT_LT(out.quat_w, 1.0f);
+    EXPECT_GT(out.quat_z, 0.0f);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier1_ChainsExtrapolationAcrossTicks) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read with omega_z = 1.0
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 1.0f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Run 4 failures (all Tier 1): each should extrapolate from previous
+    nav_tick_update(state, make_imu_fail_snap(), &out);
+    float z_after_1 = out.quat_z;
+
+    nav_tick_update(state, make_imu_fail_snap(), &out);
+    float z_after_2 = out.quat_z;
+
+    nav_tick_update(state, make_imu_fail_snap(), &out);
+    float z_after_3 = out.quat_z;
+
+    nav_tick_update(state, make_imu_fail_snap(), &out);
+    float z_after_4 = out.quat_z;
+
+    // Verify z component increases with each extrapolation (chaining)
+    EXPECT_GT(z_after_2, z_after_1);
+    EXPECT_GT(z_after_3, z_after_2);
+    EXPECT_GT(z_after_4, z_after_3);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier1_ZeroAngularVelocityHoldsOrientation) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read with zero angular velocity
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Fail 1 tick with zero omega: extrapolation should not change quaternion
+    nav_tick_update(state, make_imu_fail_snap(), &out);
+
+    // Quaternion should remain identity (omega=0 means no rotation)
+    EXPECT_NEAR(out.quat_w, 1.0f, 1e-6f);
+    EXPECT_NEAR(out.quat_x, 0.0f, 1e-6f);
+    EXPECT_NEAR(out.quat_y, 0.0f, 1e-6f);
+    EXPECT_NEAR(out.quat_z, 0.0f, 1e-6f);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier1_SetsIMUEstimatedNotLost) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Fail 1 tick (Tier 1)
+    uint8_t flags = nav_tick_update(state, make_imu_fail_snap(), &out);
+
+    // ESTIMATED should be set, LOST should NOT be set
+    EXPECT_NE(flags & NAV_FLAG_IMU_ESTIMATED, 0);
+    EXPECT_EQ(flags & NAV_FLAG_IMU_LOST, 0);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier1_DoesNotThrottleDistance) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read with omega
+    SensorSnapshot snap_good = {
+        .encoder_delta = 2.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+    double pos_before = state.pos_x;
+
+    // Fail 1 tick (Tier 1): distance should NOT be throttled
+    SensorSnapshot snap_fail = {
+        .encoder_delta = 2.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false
+    };
+    nav_tick_update(state, snap_fail, &out);
+
+    // Full distance accumulation: delta_dist = 2.0 * 0.025 = 0.05
+    double delta_dist = state.pos_x - pos_before;
+    EXPECT_NEAR(delta_dist, 2.0 * ENCODER_WHEEL_RADIUS_M, 1e-6);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier1_DoesNotRequestReset) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Fail 3 ticks (all Tier 1)
+    for (int i = 0; i < 3; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    // action_flags should NOT have NAV_ACTION_IMU_RESET
+    EXPECT_EQ(state.action_flags & NAV_ACTION_IMU_RESET, 0);
+}
+
+// Tier 2 Tests (streak 5-49): Hold orientation, throttle distance by 50%
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier2_HoldsOrientationAtBoundary) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read with omega
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 1.0f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Run 4 Tier 1 failures (extrapolation)
+    for (int i = 0; i < 4; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    // Record quaternion after Tier 1
+    Quat quat_tier1_end = {out.quat_w, out.quat_x, out.quat_y, out.quat_z};
+
+    // 5th failure enters Tier 2: orientation should be held (not extrapolated)
+    nav_tick_update(state, make_imu_fail_snap(), &out);
+
+    // Quaternion should match end of Tier 1 (held, not extrapolated)
+    EXPECT_FLOAT_NEAR(out.quat_w, quat_tier1_end.w);
+    EXPECT_FLOAT_NEAR(out.quat_x, quat_tier1_end.x);
+    EXPECT_FLOAT_NEAR(out.quat_y, quat_tier1_end.y);
+    EXPECT_FLOAT_NEAR(out.quat_z, quat_tier1_end.z);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier2_ThrottlesDistanceBy50Percent) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Run 4 Tier 1 failures
+    for (int i = 0; i < 4; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    double pos_before = state.pos_x;
+
+    // 5th failure (Tier 2): encoder_delta=2.0, throttled by 50%
+    SensorSnapshot snap_tier2 = {
+        .encoder_delta = 2.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false
+    };
+    nav_tick_update(state, snap_tier2, &out);
+
+    // Distance should be: 2.0 * 0.025 * 0.5 = 0.025
+    // Use relaxed tolerance due to float->double conversions and quaternion extrapolation accumulation
+    double delta_dist = state.pos_x - pos_before;
+    EXPECT_NEAR(delta_dist, 2.0 * ENCODER_WHEEL_RADIUS_M * NAV_IMU_DIST_THROTTLE, 1e-5);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier2_ThrottleStacksWithEncoderRecovery) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read with encoder_delta=2.0 → velocity = 5.0 m/s
+    SensorSnapshot snap_good = {
+        .encoder_delta = 2.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Enter IMU Tier 2 (4 IMU failures). The helper has encoder_valid=true with encoder_delta=1.0,
+    // which updates encoder velocity to 2.5 m/s on each tick.
+    for (int i = 0; i < 4; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    // Last encoder velocity is now 2.5 m/s (from the helper's encoder_delta=1.0)
+    EXPECT_FLOAT_NEAR(state.last_velocity, 2.5f);
+
+    double pos_before = state.pos_x;
+
+    // 5th failure with BOTH encoder and IMU failed
+    SensorSnapshot snap_both_fail = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = false,
+        .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false
+    };
+    nav_tick_update(state, snap_both_fail, &out);
+
+    // Encoder Tier 1: uses last_velocity = 2.5 m/s → delta_dist = 2.5 * 0.01 = 0.025
+    // Then IMU Tier 2 throttles by 50%: 0.025 * 0.5 = 0.0125
+    double delta_dist = state.pos_x - pos_before;
+    EXPECT_NEAR(delta_dist, 0.0125, 1e-5);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier2_SetsIMUEstimatedNotLost) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Enter Tier 2 (5 failures)
+    for (int i = 0; i < 5; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    uint8_t flags = nav_tick_update(state, make_imu_fail_snap(), &out);
+
+    // ESTIMATED set, LOST NOT set
+    EXPECT_NE(flags & NAV_FLAG_IMU_ESTIMATED, 0);
+    EXPECT_EQ(flags & NAV_FLAG_IMU_LOST, 0);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier2_DoesNotRequestReset) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Run 10 failures (well into Tier 2)
+    for (int i = 0; i < 10; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    // action_flags should NOT have NAV_ACTION_IMU_RESET
+    EXPECT_EQ(state.action_flags & NAV_ACTION_IMU_RESET, 0);
+}
+
+// Tier 3 Tests (streak 50+): Distance zeroed, IMU_LOST + NAV_CRITICAL, reset requested
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier3_ZerosDistance) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Enter Tier 3 (50 failures)
+    for (int i = 0; i < 49; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    double pos_before = state.pos_x;
+
+    // 50th failure (Tier 3 entry): encoder_delta=2.0 but distance zeroed
+    SensorSnapshot snap_tier3 = {
+        .encoder_delta = 2.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false
+    };
+    nav_tick_update(state, snap_tier3, &out);
+
+    // Distance should be zeroed
+    EXPECT_DOUBLE_NEAR(state.pos_x, pos_before);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier3_SetsIMULostAndNavCritical) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Enter Tier 3 (50 failures)
+    for (int i = 0; i < 49; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    uint8_t flags = nav_tick_update(state, make_imu_fail_snap(), &out);
+
+    // Both IMU_LOST and NAV_CRITICAL should be set
+    EXPECT_NE(flags & NAV_FLAG_IMU_LOST, 0);
+    EXPECT_NE(flags & NAV_FLAG_NAV_CRITICAL, 0);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier3_RequestsResetOnce) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Enter Tier 3 (50 failures)
+    for (int i = 0; i < 49; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    // 50th failure: NAV_ACTION_IMU_RESET should be set
+    nav_tick_update(state, make_imu_fail_snap(), &out);
+    EXPECT_NE(state.action_flags & NAV_ACTION_IMU_RESET, 0);
+    EXPECT_TRUE(state.imu_reset_requested);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier3_DoesNotReRequestReset) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Enter Tier 3 and trigger reset request
+    for (int i = 0; i < 50; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    // Consumer clears action_flags (simulating core1_nav.cpp handling it)
+    state.action_flags = 0;
+
+    // Subsequent Tier 3 tick should NOT re-set action_flags
+    nav_tick_update(state, make_imu_fail_snap(), &out);
+    EXPECT_EQ(state.action_flags & NAV_ACTION_IMU_RESET, 0);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, Tier3_TotalDistanceFrozen) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Enter Tier 3
+    for (int i = 0; i < 50; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    double total_dist_frozen = state.total_distance;
+
+    // Run 5 more Tier 3 ticks with encoder motion
+    for (int i = 0; i < 5; ++i) {
+        SensorSnapshot snap = {
+            .encoder_delta = 2.0f,
+            .encoder_valid = true,
+            .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+            .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+            .imu_valid = false
+        };
+        nav_tick_update(state, snap, &out);
+    }
+
+    // total_distance should not have increased
+    EXPECT_DOUBLE_NEAR(state.total_distance, total_dist_frozen);
+}
+
+// Recovery Tests
+
+TEST(NavTickUpdate_IMUTieredRecovery, RecoveryFromTier1_ResetsStateFully) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read with omega
+    SensorSnapshot snap_good1 = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good1, &out);
+
+    // Run 3 Tier 1 failures
+    for (int i = 0; i < 3; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    EXPECT_EQ(state.imu_fail_streak, 3);
+
+    // Recovery: Good read with new quaternion and angular velocity
+    SensorSnapshot snap_good2 = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {0.9f, 0.1f, 0.2f, 0.3f},
+        .imu_angular_velocity = {0.1f, 0.2f, 0.3f},
+        .imu_valid = true
+    };
+    uint8_t flags = nav_tick_update(state, snap_good2, &out);
+
+    // Verify reset
+    EXPECT_EQ(state.imu_fail_streak, 0);
+    EXPECT_FALSE(state.imu_reset_requested);
+    EXPECT_EQ(state.action_flags & NAV_ACTION_IMU_RESET, 0);
+    EXPECT_EQ(flags, 0);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, RecoveryFromTier2_ClearsThrottleAndFlags) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good1 = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good1, &out);
+
+    // Enter Tier 2 (6 failures)
+    for (int i = 0; i < 6; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    double pos_before = state.pos_x;
+
+    // Recovery: Good read with encoder motion
+    SensorSnapshot snap_good2 = {
+        .encoder_delta = 2.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+    uint8_t flags = nav_tick_update(state, snap_good2, &out);
+
+    // Distance should be full (not throttled): 2.0 * 0.025 = 0.05
+    double delta_dist = state.pos_x - pos_before;
+    EXPECT_NEAR(delta_dist, 2.0 * ENCODER_WHEEL_RADIUS_M, 1e-6);
+
+    // Flags cleared
+    EXPECT_EQ(flags, 0);
+    EXPECT_EQ(state.imu_fail_streak, 0);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, RecoveryFromTier3_ClearsAllFlagsAndResetRequest) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good1 = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good1, &out);
+
+    // Enter Tier 3 (50 failures)
+    for (int i = 0; i < 50; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    EXPECT_TRUE(state.imu_reset_requested);
+    EXPECT_NE(state.action_flags & NAV_ACTION_IMU_RESET, 0);
+
+    // Recovery: Good read
+    SensorSnapshot snap_good2 = {
+        .encoder_delta = 2.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+    uint8_t flags = nav_tick_update(state, snap_good2, &out);
+
+    // All flags cleared
+    EXPECT_EQ(flags & NAV_FLAG_IMU_LOST, 0);
+    EXPECT_EQ(flags & NAV_FLAG_NAV_CRITICAL, 0);
+    EXPECT_EQ(flags & NAV_FLAG_IMU_ESTIMATED, 0);
+    EXPECT_EQ(state.imu_fail_streak, 0);
+    EXPECT_FALSE(state.imu_reset_requested);
+    EXPECT_EQ(state.action_flags & NAV_ACTION_IMU_RESET, 0);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, NewFailureAfterRecovery_ReRaisesResetRequest) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read
+    SensorSnapshot snap_good1 = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good1, &out);
+
+    // Enter Tier 3 (50 failures)
+    for (int i = 0; i < 50; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    // Recovery
+    SensorSnapshot snap_good2 = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good2, &out);
+
+    EXPECT_FALSE(state.imu_reset_requested);
+
+    // Fail again to Tier 3 (50 more failures)
+    for (int i = 0; i < 50; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    // Reset should be requested again
+    EXPECT_TRUE(state.imu_reset_requested);
+    EXPECT_NE(state.action_flags & NAV_ACTION_IMU_RESET, 0);
+}
+
+// Edge Cases
+
+TEST(NavTickUpdate_IMUTieredRecovery, UINT16MAX_SaturationWithTiers) {
+    NavTickState state = {};
+    state.imu_fail_streak = UINT16_MAX;
+    nav_state_compact_t out = {};
+
+    // Fail one more time
+    uint8_t flags = nav_tick_update(state, make_imu_fail_snap(), &out);
+
+    // Should still be UINT16_MAX (saturated)
+    EXPECT_EQ(state.imu_fail_streak, UINT16_MAX);
+
+    // Should behave as Tier 3 (IMU_LOST + NAV_CRITICAL)
+    EXPECT_NE(flags & NAV_FLAG_IMU_LOST, 0);
+    EXPECT_NE(flags & NAV_FLAG_NAV_CRITICAL, 0);
+}
+
+TEST(NavTickUpdate_IMUTieredRecovery, SimultaneousEncoderAndIMUTier3) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Setup: Good read with encoder_delta=0.001f to quickly reach encoder Tier 3
+    SensorSnapshot snap_good = {
+        .encoder_delta = 0.001f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Fail both sensors for 50 ticks to reach both Tier 3
+    SensorSnapshot snap_both_fail = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = false,
+        .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false
+    };
+    for (int i = 0; i < 50; ++i) {
+        nav_tick_update(state, snap_both_fail, &out);
+    }
+
+    uint8_t flags = nav_tick_update(state, snap_both_fail, &out);
+
+    // Verify all expected flags are set
+    EXPECT_NE(flags & NAV_FLAG_ENCODER_ESTIMATED, 0);
+    EXPECT_NE(flags & NAV_FLAG_ENCODER_LOST, 0);
+    EXPECT_NE(flags & NAV_FLAG_IMU_ESTIMATED, 0);
+    EXPECT_NE(flags & NAV_FLAG_IMU_LOST, 0);
+    EXPECT_NE(flags & NAV_FLAG_NAV_CRITICAL, 0);
 }
 
 // ============================================================================

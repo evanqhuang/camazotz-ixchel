@@ -85,6 +85,57 @@ __not_in_flash_func(void) integrate_position(double *pos_x, double *pos_y,
 }
 
 /*============================================================================
+ * Quaternion Extrapolation (Euler Step)
+ *============================================================================*/
+__not_in_flash_func(void) quaternion_extrapolate(const Quat *q_curr,
+                                                   const Vec3 *omega,
+                                                   float dt, Quat *q_out) {
+    /* Hamilton product: omega_pure * q_curr
+     * where omega_pure = (0, wx, wy, wz) */
+    float qw = q_curr->w;
+    float qx = q_curr->x;
+    float qy = q_curr->y;
+    float qz = q_curr->z;
+
+    float ox = omega->x;
+    float oy = omega->y;
+    float oz = omega->z;
+
+    /* omega_pure * q = (0,ox,oy,oz) * (qw,qx,qy,qz)
+     * pw = -ox*qx - oy*qy - oz*qz
+     * px =  ox*qw + oy*qz - oz*qy
+     * py = -ox*qz + oy*qw + oz*qx
+     * pz =  ox*qy - oy*qx + oz*qw */
+    float pw = -ox * qx - oy * qy - oz * qz;
+    float px =  ox * qw + oy * qz - oz * qy;
+    float py = -ox * qz + oy * qw + oz * qx;
+    float pz =  ox * qy - oy * qx + oz * qw;
+
+    /* Euler step: q_out = q_curr + 0.5 * product * dt */
+    float half_dt = 0.5f * dt;
+    float rw = qw + half_dt * pw;
+    float rx = qx + half_dt * px;
+    float ry = qy + half_dt * py;
+    float rz = qz + half_dt * pz;
+
+    /* Normalize with degenerate guard */
+    float norm_sq = rw * rw + rx * rx + ry * ry + rz * rz;
+    if (norm_sq < 1e-9f) {
+        q_out->w = 1.0f;
+        q_out->x = 0.0f;
+        q_out->y = 0.0f;
+        q_out->z = 0.0f;
+        return;
+    }
+
+    float inv_norm = 1.0f / sqrtf(norm_sq);
+    q_out->w = rw * inv_norm;
+    q_out->x = rx * inv_norm;
+    q_out->y = ry * inv_norm;
+    q_out->z = rz * inv_norm;
+}
+
+/*============================================================================
  * Extract Heading and Pitch
  *============================================================================*/
 __not_in_flash_func(void) extract_heading_pitch(const double R[3][3],

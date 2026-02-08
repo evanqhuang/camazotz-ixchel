@@ -93,9 +93,11 @@
  * Error Recovery Thresholds
  *============================================================================*/
 #define NAV_ENCODER_FAIL_THRESHOLD      10U      /* Set ESTIMATED after N consecutive failures */
-#define NAV_IMU_FAIL_THRESHOLD          10U
+#define NAV_IMU_TIER1_THRESHOLD         5U       /* IMU Tier 1→2 boundary (extrapolate→hold) */
+#define NAV_IMU_TIER3_THRESHOLD         50U      /* IMU Tier 2→3 boundary (hold→lost) */
 #define NAV_CRITICAL_FAIL_THRESHOLD     50U      /* Set NAV_CRITICAL after N consecutive failures */
 #define NAV_ENCODER_DECAY_FACTOR        0.8f    /* 20% velocity reduction per Tier 2 tick */
 #define NAV_ENCODER_VELOCITY_EPSILON    1e-6f   /* m/s threshold for Tier 2 -> 3 transition */
+#define NAV_IMU_DIST_THROTTLE           0.5f    /* IMU Tier 2 distance scaling factor */
 
 #endif /* MAPPER_CONFIG_H */
