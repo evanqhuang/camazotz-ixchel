@@ -100,4 +100,12 @@
 #define NAV_ENCODER_VELOCITY_EPSILON    1e-6f   /* m/s threshold for Tier 2 -> 3 transition */
 #define NAV_IMU_DIST_THROTTLE           0.5f    /* IMU Tier 2 distance scaling factor */
 
+/*============================================================================
+ * Error Recovery - Depth Sensor
+ *============================================================================*/
+#define DEPTH_FAIL_GRACE_TICKS          10U     /* 100ms grace before Tier 1 */
+#define DEPTH_TIER2_THRESHOLD_TICKS     200U    /* 2s: Tier 1 → Tier 2 boundary */
+#define DEPTH_TIER3_THRESHOLD_TICKS     1000U   /* 10s: Tier 2 → Tier 3 boundary */
+#define DEPTH_SLEW_DURATION_TICKS       200U    /* 2s linear slew on recovery */
+
 #endif /* MAPPER_CONFIG_H */

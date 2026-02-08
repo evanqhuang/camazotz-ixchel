@@ -1677,3 +1677,93 @@ TEST(NavTickUpdate_EdgeCases, LargePositionValues) {
     EXPECT_DOUBLE_NEAR(state.pos_y, -5e5);
     EXPECT_DOUBLE_NEAR(state.pos_z, 3e5);
 }
+
+// ============================================================================
+// Test Suite: NavTickUpdate_DeltaDistOutput
+// ============================================================================
+
+TEST(NavTickUpdate_DeltaDistOutput, DeltaDistOutputIsPreThrottle) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Good encoder read, good IMU
+    SensorSnapshot snap_good = {
+        .encoder_delta = 2.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // delta_dist = encoder_delta * ENCODER_WHEEL_RADIUS_M = 2.0 * 0.025 = 0.05
+    EXPECT_FLOAT_NEAR(out.delta_dist, 2.0f * ENCODER_WHEEL_RADIUS_M);
+}
+
+TEST(NavTickUpdate_DeltaDistOutput, DeltaDistPreservedDuringIMUTier2Throttle) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Good read to set up velocity
+    SensorSnapshot snap_good = {
+        .encoder_delta = 2.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Enter IMU Tier 2 (5+ failures, which throttles delta_dist by 50% for position)
+    for (int i = 0; i < 6; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    // Encoder valid with encoder_delta=4.0, IMU Tier 2 throttles internally
+    // but delta_dist output should be PRE-throttle
+    SensorSnapshot snap_enc = {
+        .encoder_delta = 4.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false
+    };
+    nav_tick_update(state, snap_enc, &out);
+
+    // Output delta_dist should be pre-throttle: 4.0 * 0.025 = 0.1
+    EXPECT_FLOAT_NEAR(out.delta_dist, 4.0f * ENCODER_WHEEL_RADIUS_M);
+}
+
+TEST(NavTickUpdate_DeltaDistOutput, DeltaDistPreservedDuringIMUTier3Zero) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Good read to set up velocity
+    SensorSnapshot snap_good = {
+        .encoder_delta = 2.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_valid = true
+    };
+    nav_tick_update(state, snap_good, &out);
+
+    // Enter IMU Tier 3 (50+ failures, which zeros delta_dist for position)
+    for (int i = 0; i < 50; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    // Encoder valid with encoder_delta=4.0, IMU Tier 3 zeros delta_dist internally
+    // but output delta_dist should be PRE-throttle
+    SensorSnapshot snap_enc = {
+        .encoder_delta = 4.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false
+    };
+    nav_tick_update(state, snap_enc, &out);
+
+    // Output delta_dist should be pre-throttle: 4.0 * 0.025 = 0.1
+    EXPECT_FLOAT_NEAR(out.delta_dist, 4.0f * ENCODER_WHEEL_RADIUS_M);
+}

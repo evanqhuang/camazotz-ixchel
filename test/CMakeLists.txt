@@ -73,6 +73,15 @@ add_executable(display_tests
 target_compile_options(display_tests PRIVATE ${TEST_WARNING_FLAGS})
 target_link_libraries(display_tests GTest::gtest_main)
 
+# --- depth_recovery_tests ---
+add_executable(depth_recovery_tests
+  test_depth_recovery.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../logic/depth_recovery.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../logic/nav_math.cpp
+)
+target_compile_options(depth_recovery_tests PRIVATE ${TEST_WARNING_FLAGS})
+target_link_libraries(depth_recovery_tests GTest::gtest_main)
+
 # Enable testing
 enable_testing()
 include(GoogleTest)
@@ -82,3 +91,4 @@ gtest_discover_tests(encoder_math_tests)
 gtest_discover_tests(types_tests)
 gtest_discover_tests(nav_tick_tests)
 gtest_discover_tests(display_tests)
+gtest_discover_tests(depth_recovery_tests)

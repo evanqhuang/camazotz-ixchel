@@ -12,6 +12,8 @@
 #include "drivers/depth_wrapper.hpp"
 #include "logic/calibration_manager.hpp"
 #include "logic/core1_nav.hpp"
+#include "logic/depth_recovery.hpp"
+#include "logic/nav_math.hpp"
 #include "utils/stdio_display.hpp"
 #include "utils/amoled_display.hpp"
 #include "utils/dual_display.hpp"
@@ -143,12 +145,36 @@ int main() {
     static constexpr uint32_t HEARTBEAT_INTERVAL = 500;  // iterations (~5s at 10ms sleep)
     static constexpr uint32_t LOOP_SLEEP_MS = 10;
     uint32_t loop_count = 0;
+    static DepthRecoveryState depth_recovery_state = {};
+    double z_recovered = 0.0;
+    uint8_t depth_flags = 0;
+
     while (true) {
         watchdog_update();
 
+        /* Read nav state from Core 1 every iteration for depth recovery */
+        nav_state_compact_t nav = core1_get_nav_state();
+
+        /* Extract pitch from quaternion for depth recovery geometric estimation */
+        Quat q = {nav.quat_w, nav.quat_x, nav.quat_y, nav.quat_z};
+        double R[3][3];
+        quaternion_to_rotation_matrix(q, R);
+        double heading_unused, pitch_rad;
+        extract_heading_pitch(R, &heading_unused, &pitch_rad);
+
+        /* Update depth sensor and run tiered recovery */
+        bool depth_updated = false;
         if (bus_ok) {
-            depth.update();
+            depth_updated = depth.update();
         }
+
+        DepthSnapshot dsnap = {
+            .new_reading = depth_updated,
+            .depth_m = depth.depth_m(),
+            .pitch_rad = static_cast<float>(pitch_rad),
+            .delta_dist = nav.delta_dist,
+        };
+        depth_flags = depth_recovery_update(depth_recovery_state, dsnap, &z_recovered);
 
         /* Process LVGL rendering events */
         if (display_ok) {
@@ -161,25 +187,32 @@ int main() {
             // Sequence number consumed — latest nav state available
         }
 
+        /* Check for depth sensor NAV_CRITICAL */
+        if (depth_flags & NAV_FLAG_NAV_CRITICAL) {
+            display.show_error("NAV", "DEPTH LOST - NAV CRITICAL",
+                               DisplaySeverity::Fatal);
+        }
+
         if (++loop_count >= HEARTBEAT_INTERVAL) {
-            nav_state_compact_t nav = core1_get_nav_state();
             JitterStats jitter = core1_get_jitter_stats();
             uint32_t drops = core1_get_dropped_frames();
+            uint8_t combined_flags = nav.status_flags | depth_flags;
 
             if (nav.status_flags & NAV_FLAG_IMU_LOST) {
                 display.show_error("NAV", "IMU LOST - NAV CRITICAL",
                                    DisplaySeverity::Fatal);
             }
 
-            /* TODO: SD logging for IMU recovery events when logging infrastructure exists */
+            /* TODO: SD logging for IMU/depth recovery events when logging infrastructure exists */
 
-            printf("[heartbeat] uptime=%lu ms  pos=(%.4f, %.4f, %.4f)  "
+            printf("[heartbeat] uptime=%lu ms  pos=(%.4f, %.4f, %.4f)  depth_z=%.4f  "
                    "flags=0x%02X  jitter=%lu/%lu/%lu us  drops=%lu\n",
                    static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())),
                    static_cast<double>(nav.pos_x),
                    static_cast<double>(nav.pos_y),
                    static_cast<double>(nav.pos_z),
-                   nav.status_flags,
+                   z_recovered,
+                   combined_flags,
                    static_cast<unsigned long>(jitter.min_us),
                    static_cast<unsigned long>(jitter.last_us),
                    static_cast<unsigned long>(jitter.max_us),

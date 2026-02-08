@@ -12,6 +12,7 @@ add_executable(mapper
     ../logic/core1_nav.cpp
     ../logic/depth_math.cpp
     ../logic/encoder_math.cpp
+    ../logic/depth_recovery.cpp
     ../utils/stdio_display.cpp
     ../utils/lvgl_port.cpp
     ../utils/amoled_display.cpp
@@ -36,6 +37,7 @@ set_source_files_properties(
     ../logic/core1_nav.cpp
     ../logic/depth_math.cpp
     ../logic/encoder_math.cpp
+    ../logic/depth_recovery.cpp
     ../utils/stdio_display.cpp
     ../utils/lvgl_port.cpp
     ../utils/amoled_display.cpp

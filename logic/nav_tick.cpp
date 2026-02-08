@@ -48,6 +48,9 @@ __not_in_flash_func(uint8_t) nav_tick_update(NavTickState &state,
         encoder_delta = delta_dist / ENCODER_WHEEL_RADIUS_M;
     }
 
+    /* Save pre-IMU-throttle delta_dist for depth recovery on Core 0 */
+    float delta_dist_physical = delta_dist;
+
     /* IMU tiered recovery */
     if (snap.imu_valid) {
         quat = snap.imu_quaternion;
@@ -128,6 +131,7 @@ __not_in_flash_func(uint8_t) nav_tick_update(NavTickState &state,
     out->pos_x = static_cast<float>(state.pos_x);
     out->pos_y = static_cast<float>(state.pos_y);
     out->pos_z = static_cast<float>(state.pos_z);
+    out->delta_dist = delta_dist_physical;
     out->status_flags = status_flags;
 
     /* Increment tick counter */

@@ -107,7 +107,7 @@ _Static_assert(sizeof(navigation_state_t) == 56U,
  * Position doubles are downcast to floats — acceptable for Core 0 display/logging
  * while Core 1 maintains full double precision internally.
  *
- * Memory Layout (36 bytes):
+ * Memory Layout (40 bytes):
  * Offset | Size | Field
  * -------|------|------------------
  *   0    |  4   | angular_delta
@@ -118,24 +118,26 @@ _Static_assert(sizeof(navigation_state_t) == 56U,
  *  20    |  4   | pos_x
  *  24    |  4   | pos_y
  *  28    |  4   | pos_z
- *  32    |  1   | status_flags
- *  33    |  3   | [padding]
- *  36    | TOTAL
+ *  32    |  4   | delta_dist
+ *  36    |  1   | status_flags
+ *  37    |  3   | [padding]
+ *  40    | TOTAL
  */
 typedef struct {
     float angular_delta;
     float quat_w, quat_x, quat_y, quat_z;
     float pos_x, pos_y, pos_z;
+    float delta_dist;             /* Pre-IMU-throttle physical distance (meters) */
     uint8_t status_flags;
     uint8_t _pad[3];  /* Align to 4-byte boundary */
 } nav_state_compact_t;
 
 #ifdef __cplusplus
-static_assert(sizeof(nav_state_compact_t) == 36U,
-              "nav_state_compact_t must be exactly 36 bytes for inter-core transfer");
+static_assert(sizeof(nav_state_compact_t) == 40U,
+              "nav_state_compact_t must be exactly 40 bytes for inter-core transfer");
 #else
-_Static_assert(sizeof(nav_state_compact_t) == 36U,
-               "nav_state_compact_t must be exactly 36 bytes for inter-core transfer");
+_Static_assert(sizeof(nav_state_compact_t) == 40U,
+               "nav_state_compact_t must be exactly 40 bytes for inter-core transfer");
 #endif
 
 /*============================================================================
