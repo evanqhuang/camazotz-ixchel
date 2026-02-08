@@ -108,4 +108,13 @@
 #define DEPTH_TIER3_THRESHOLD_TICKS     1000U   /* 10s: Tier 2 → Tier 3 boundary */
 #define DEPTH_SLEW_DURATION_TICKS       200U    /* 2s linear slew on recovery */
 
+/*============================================================================
+ * SD Card Logging
+ *============================================================================*/
+#define LOG_BUFFER_SIZE_BYTES   32768U   /* 32KB ring buffer (682 records) */
+#define LOG_FLUSH_RATE_HZ       10U      /* Ring buffer flush rate */
+#define LOG_SYNC_INTERVAL_S     5U       /* f_sync interval (FAT commit) */
+#define LOG_EVENT_COOLDOWN_MS   1000U    /* Event deduplication cooldown */
+#define SD_BAUD_RATE            37500000U /* 37.5MHz for 150MHz sysclk */
+
 #endif /* MAPPER_CONFIG_H */

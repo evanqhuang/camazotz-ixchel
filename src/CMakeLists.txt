@@ -6,6 +6,8 @@ add_executable(mapper
     ../drivers/pio_i2c.cpp
     ../drivers/depth_wrapper.cpp
     ../drivers/amoled_driver.cpp
+    ../drivers/sdio_logger.cpp
+    ../drivers/hw_config.c
     ../logic/calibration_manager.cpp
     ../logic/nav_math.cpp
     ../logic/nav_tick.cpp
@@ -31,6 +33,7 @@ set_source_files_properties(
     ../drivers/pio_i2c.cpp
     ../drivers/depth_wrapper.cpp
     ../drivers/amoled_driver.cpp
+    ../drivers/sdio_logger.cpp
     ../logic/calibration_manager.cpp
     ../logic/nav_math.cpp
     ../logic/nav_tick.cpp

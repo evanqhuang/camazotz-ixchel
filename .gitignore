@@ -49,6 +49,7 @@ platformio.ini
 *.map
 
 RP2350-Touch-AMOLED-1.64-LVGL/
+RP2350-Touch-AMOLED-1.64/
 
 # Test build output
 test/build/

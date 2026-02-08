@@ -36,14 +36,21 @@ bool IMU_Wrapper::init() {
     static constexpr uint8_t addrs[] = {0x4B, 0x4A, 0x28};
 
     for (int cycle = 0; cycle < MAX_PROBE_CYCLES; cycle++) {
-        // Wait for HINTN LOW (sensor ready)
+        // Wait for HINTN LOW (sensor ready) - but don't skip if it times out
+        // Some boards don't have INT wired, so we fall back to polling
         absolute_time_t deadline = make_timeout_time_ms(HINTN_WAIT_MS);
         bool hint = false;
         while (!time_reached(deadline)) {
             if (!gpio_get(IMU_INT_PIN)) { hint = true; break; }
             sleep_us(100);
         }
-        if (!hint) continue;
+        if (!hint && cycle < MAX_PROBE_CYCLES - 5) {
+            // First 15 cycles: require HINTN. Last 5 cycles: try anyway (polling mode)
+            continue;
+        }
+        if (!hint) {
+            printf("[IMU] HINTN not asserted, trying I2C anyway (cycle %d)\n", cycle);
+        }
 
         for (uint8_t addr : addrs) {
             uint8_t dummy = 0;

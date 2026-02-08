@@ -6,6 +6,8 @@
 #include "drivers/encoder_wrapper.hpp"
 
 #include "hardware/irq.h"
+#include "pico/stdlib.h"
+#include <cstdio>
 
 bool Encoder_Wrapper::init() {
     // 1. Initialize I2C0 hardware at 400kHz
@@ -86,7 +88,22 @@ bool Encoder_Wrapper::read_raw_angle(uint16_t *out) {
 }
 
 bool Encoder_Wrapper::check_magnet_present() {
-    as5600_status_t status = as5600_read_status(&encoder_);
+    // Use timeout-protected I2C read to prevent hangs when encoder disconnected
+    uint8_t reg = 0x0B;  // STATUS register address
+    uint8_t status = 0;
+
+    int ret = i2c_write_timeout_us(i2c0, 0x36, &reg, 1, true, 10000);  // 10ms timeout
+    if (ret < 0) {
+        printf("[ENC] I2C write timeout\n");
+        return false;
+    }
+
+    ret = i2c_read_timeout_us(i2c0, 0x36, &status, 1, false, 10000);  // 10ms timeout
+    if (ret < 0) {
+        printf("[ENC] I2C read timeout\n");
+        return false;
+    }
+
     // MD bit (1 << 5) indicates magnet detected
     return (status & MD) != 0;
 }

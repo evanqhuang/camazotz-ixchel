@@ -10,6 +10,7 @@
 #include "drivers/imu_wrapper.hpp"
 #include "drivers/pio_i2c.hpp"
 #include "drivers/depth_wrapper.hpp"
+#include "drivers/sdio_logger.hpp"
 #include "logic/calibration_manager.hpp"
 #include "logic/core1_nav.hpp"
 #include "logic/depth_recovery.hpp"
@@ -78,6 +79,44 @@ int main() {
     PIO_I2C depth_bus;
     Depth_Wrapper depth;
 
+    // I2C bus scan for diagnostics
+    printf("\n[DIAG] I2C Bus Scan\n");
+
+    // Scan I2C0 (encoder bus)
+    i2c_init(i2c0, 100000);  // 100kHz for scan
+    gpio_set_function(ENCODER_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(ENCODER_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(ENCODER_SDA_PIN);
+    gpio_pull_up(ENCODER_SCL_PIN);
+    printf("[DIAG] I2C0 (GP%d/GP%d): ", ENCODER_SDA_PIN, ENCODER_SCL_PIN);
+    for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+        uint8_t dummy;
+        int ret = i2c_read_timeout_us(i2c0, addr, &dummy, 1, false, 5000);
+        if (ret >= 0) {
+            printf("0x%02X ", addr);
+        }
+    }
+    printf("\n");
+    i2c_deinit(i2c0);
+
+    // Scan I2C1 (IMU bus)
+    i2c_init(i2c1, 100000);
+    gpio_set_function(IMU_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(IMU_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(IMU_SDA_PIN);
+    gpio_pull_up(IMU_SCL_PIN);
+    printf("[DIAG] I2C1 (GP%d/GP%d): ", IMU_SDA_PIN, IMU_SCL_PIN);
+    for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+        uint8_t dummy;
+        int ret = i2c_read_timeout_us(i2c1, addr, &dummy, 1, false, 5000);
+        if (ret >= 0) {
+            printf("0x%02X ", addr);
+        }
+    }
+    printf("\n");
+    i2c_deinit(i2c1);
+    stdio_flush();
+
     // Initialize each sensor — failures are non-fatal
     display.show_status("Init", "Encoder (I2C0)...");
     bool enc_ok = encoder.init();
@@ -128,6 +167,16 @@ int main() {
         display.show_status("Cal", cal_summary);
     }
 
+    // Initialize SD card logger (before Core 1 launch so boot count is stable)
+    static SDIO_Logger sd_logger;
+    bool sd_ok = sd_logger.init();
+    if (sd_ok) {
+        display.show_status("SD", "Logger initialized");
+    } else {
+        display.show_error("SD", "Logger init FAILED", DisplaySeverity::Warning);
+    }
+    stdio_flush();
+
     // Enable watchdog — Core 0 and Core 1 both feed it
     watchdog_enable(NAV_WATCHDOG_TIMEOUT_MS, true);
     display.show_status("Sys", "Watchdog enabled");
@@ -141,13 +190,16 @@ int main() {
     display.show_status("Sys", "Running");
     stdio_flush();
 
-    // Main loop — Core 0 handles depth sensor, FIFO consumption, display, and heartbeat
+    // Main loop — Core 0 handles depth sensor, FIFO consumption, display, logging, and heartbeat
     static constexpr uint32_t HEARTBEAT_INTERVAL = 500;  // iterations (~5s at 10ms sleep)
+    static constexpr uint32_t FLUSH_INTERVAL = 10;       // iterations (~100ms at 10ms = 10Hz flush)
     static constexpr uint32_t LOOP_SLEEP_MS = 10;
     uint32_t loop_count = 0;
+    uint32_t flush_count = 0;
     static DepthRecoveryState depth_recovery_state = {};
     double z_recovered = 0.0;
     uint8_t depth_flags = 0;
+    uint8_t prev_status_flags = 0;
 
     while (true) {
         watchdog_update();
@@ -176,6 +228,41 @@ int main() {
         };
         depth_flags = depth_recovery_update(depth_recovery_state, dsnap, &z_recovered);
 
+        /* Log navigation state to SD card */
+        if (sd_ok) {
+            sd_logger.log_state(nav);
+        }
+
+        /* Flush SD buffer at 10Hz */
+        if (++flush_count >= FLUSH_INTERVAL) {
+            if (sd_ok) {
+                sd_logger.flush();
+            }
+            flush_count = 0;
+        }
+
+        /* Log critical status flag transitions */
+        uint8_t combined_flags = nav.status_flags | depth_flags;
+        uint8_t new_flags = combined_flags & ~prev_status_flags;
+        if (sd_ok && new_flags != 0) {
+            if (new_flags & NAV_FLAG_ENCODER_LOST) {
+                sd_logger.log_event("ENCODER_LOST", combined_flags);
+            }
+            if (new_flags & NAV_FLAG_IMU_LOST) {
+                sd_logger.log_event("IMU_LOST", combined_flags);
+            }
+            if (new_flags & NAV_FLAG_NAV_CRITICAL) {
+                sd_logger.log_event("NAV_CRITICAL", combined_flags);
+            }
+            if (new_flags & NAV_FLAG_ENCODER_ESTIMATED) {
+                sd_logger.log_event("ENCODER_ESTIMATED", combined_flags);
+            }
+            if (new_flags & NAV_FLAG_IMU_ESTIMATED) {
+                sd_logger.log_event("IMU_ESTIMATED", combined_flags);
+            }
+        }
+        prev_status_flags = combined_flags;
+
         /* Process LVGL rendering events */
         if (display_ok) {
             amoled.task_handler();
@@ -196,17 +283,30 @@ int main() {
         if (++loop_count >= HEARTBEAT_INTERVAL) {
             JitterStats jitter = core1_get_jitter_stats();
             uint32_t drops = core1_get_dropped_frames();
-            uint8_t combined_flags = nav.status_flags | depth_flags;
 
             if (nav.status_flags & NAV_FLAG_IMU_LOST) {
                 display.show_error("NAV", "IMU LOST - NAV CRITICAL",
                                    DisplaySeverity::Fatal);
             }
 
-            /* TODO: SD logging for IMU/depth recovery events when logging infrastructure exists */
+            /* SD card sync and recovery during heartbeat (every 5s) */
+            if (sd_ok) {
+                if (sd_logger.is_operational()) {
+                    sd_logger.sync();
+                } else {
+                    /* Attempt recovery if in error state */
+                    if (sd_logger.try_recovery()) {
+                        sd_logger.log_event("SD_RECOVERED", combined_flags);
+                    }
+                }
+            }
+
+            /* Get SD logger stats for heartbeat output */
+            LoggerStats sd_stats = sd_logger.get_stats();
 
             printf("[heartbeat] uptime=%lu ms  pos=(%.4f, %.4f, %.4f)  depth_z=%.4f  "
-                   "flags=0x%02X  jitter=%lu/%lu/%lu us  drops=%lu\n",
+                   "flags=0x%02X  jitter=%lu/%lu/%lu us  drops=%lu  "
+                   "sd=%s rec=%lu/%lu\n",
                    static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())),
                    static_cast<double>(nav.pos_x),
                    static_cast<double>(nav.pos_y),
@@ -216,7 +316,10 @@ int main() {
                    static_cast<unsigned long>(jitter.min_us),
                    static_cast<unsigned long>(jitter.last_us),
                    static_cast<unsigned long>(jitter.max_us),
-                   static_cast<unsigned long>(drops));
+                   static_cast<unsigned long>(drops),
+                   sd_stats.mounted ? (sd_stats.critical_error ? "ERR" : "OK") : "OFF",
+                   static_cast<unsigned long>(sd_stats.records_written),
+                   static_cast<unsigned long>(sd_stats.records_dropped));
             stdio_flush();
             loop_count = 0;
         }
