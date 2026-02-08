@@ -69,6 +69,27 @@
 #define NAV_WATCHDOG_TIMEOUT_MS         100U     /* 10 missed ticks = reboot */
 
 /*============================================================================
+ * AMOLED Display - QSPI via PIO0
+ *============================================================================*/
+#define DISPLAY_CS_PIN              9U
+#define DISPLAY_SCLK_PIN            10U
+#define DISPLAY_DIO0_PIN            11U
+#define DISPLAY_DIO1_PIN            12U
+#define DISPLAY_DIO2_PIN            13U
+#define DISPLAY_DIO3_PIN            14U
+#define DISPLAY_RST_PIN             15U
+#define DISPLAY_PIO_INSTANCE        pio0
+#define DISPLAY_WIDTH               280U
+#define DISPLAY_HEIGHT              456U
+#define DISPLAY_X_OFFSET            20U
+#define DISPLAY_DEFAULT_BRIGHTNESS  80U
+
+/*============================================================================
+ * System Clock
+ *============================================================================*/
+#define SYS_CLOCK_KHZ               150000U
+
+/*============================================================================
  * Error Recovery Thresholds
  *============================================================================*/
 #define NAV_ENCODER_FAIL_THRESHOLD      10U      /* Set ESTIMATED after N consecutive failures */

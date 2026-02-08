@@ -65,6 +65,14 @@ add_executable(nav_tick_tests
 target_compile_options(nav_tick_tests PRIVATE ${TEST_WARNING_FLAGS})
 target_link_libraries(nav_tick_tests GTest::gtest_main)
 
+# --- display_tests ---
+add_executable(display_tests
+  test_display.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../utils/stdio_display.cpp
+)
+target_compile_options(display_tests PRIVATE ${TEST_WARNING_FLAGS})
+target_link_libraries(display_tests GTest::gtest_main)
+
 # Enable testing
 enable_testing()
 include(GoogleTest)
@@ -73,3 +81,4 @@ gtest_discover_tests(depth_math_tests)
 gtest_discover_tests(encoder_math_tests)
 gtest_discover_tests(types_tests)
 gtest_discover_tests(nav_tick_tests)
+gtest_discover_tests(display_tests)

@@ -5,6 +5,7 @@ add_executable(mapper
     ../drivers/imu_wrapper.cpp
     ../drivers/pio_i2c.cpp
     ../drivers/depth_wrapper.cpp
+    ../drivers/amoled_driver.cpp
     ../logic/calibration_manager.cpp
     ../logic/nav_math.cpp
     ../logic/nav_tick.cpp
@@ -12,10 +13,13 @@ add_executable(mapper
     ../logic/depth_math.cpp
     ../logic/encoder_math.cpp
     ../utils/stdio_display.cpp
+    ../utils/lvgl_port.cpp
+    ../utils/amoled_display.cpp
 )
 
-# Generate PIO header from assembly
+# Generate PIO headers from assembly
 pico_generate_pio_header(mapper ${CMAKE_CURRENT_LIST_DIR}/../drivers/pio_i2c.pio)
+pico_generate_pio_header(mapper ${CMAKE_CURRENT_LIST_DIR}/../drivers/qspi_display.pio)
 
 # Apply strict warning flags only to our source files
 string(REPLACE ";" " " PROJECT_FLAGS_STR "${PROJECT_WARNING_FLAGS};${PROJECT_SAFETY_FLAGS}")
@@ -25,6 +29,7 @@ set_source_files_properties(
     ../drivers/imu_wrapper.cpp
     ../drivers/pio_i2c.cpp
     ../drivers/depth_wrapper.cpp
+    ../drivers/amoled_driver.cpp
     ../logic/calibration_manager.cpp
     ../logic/nav_math.cpp
     ../logic/nav_tick.cpp
@@ -32,6 +37,8 @@ set_source_files_properties(
     ../logic/depth_math.cpp
     ../logic/encoder_math.cpp
     ../utils/stdio_display.cpp
+    ../utils/lvgl_port.cpp
+    ../utils/amoled_display.cpp
     PROPERTIES COMPILE_FLAGS "${PROJECT_FLAGS_STR}"
 )
 
@@ -46,9 +53,11 @@ target_link_libraries(mapper
     hardware_irq
     hardware_clocks
     hardware_watchdog
+    hardware_dma
     BNO08x_Pico_Library
     dwm_pico_as5600
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico
+    lvgl
     project_common
 )
 

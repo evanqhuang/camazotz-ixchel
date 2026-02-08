@@ -95,6 +95,24 @@ FetchContent_Declare(fatfs
 FetchContent_Populate(fatfs)
 add_subdirectory(${fatfs_SOURCE_DIR}/src ${fatfs_BINARY_DIR}/src)
 
+# LVGL 8.1.0 — same version as Waveshare reference
+FetchContent_Declare(lvgl
+    GIT_REPOSITORY https://github.com/lvgl/lvgl.git
+    GIT_TAG        v8.1.0
+    GIT_SHALLOW    TRUE
+)
+set(LV_CONF_PATH ${CMAKE_CURRENT_SOURCE_DIR}/libs/lv_conf.h CACHE STRING "" FORCE)
+FetchContent_Populate(lvgl)
+
+# Build LVGL as a static library from its src/ directory
+file(GLOB_RECURSE LVGL_SOURCES ${lvgl_SOURCE_DIR}/src/*.c)
+add_library(lvgl STATIC ${LVGL_SOURCES})
+target_include_directories(lvgl SYSTEM PUBLIC
+    ${lvgl_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs
+)
+target_link_libraries(lvgl PUBLIC pico_stdlib)
+
 # Verify SDK version >= 2.0.0
 if (PICO_SDK_VERSION_STRING VERSION_LESS "2.0.0")
     message(FATAL_ERROR "Raspberry Pi Pico SDK version 2.0.0 (or later) required. Your version is ${PICO_SDK_VERSION_STRING}")

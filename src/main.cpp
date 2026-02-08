@@ -13,15 +13,28 @@
 #include "logic/calibration_manager.hpp"
 #include "logic/core1_nav.hpp"
 #include "utils/stdio_display.hpp"
+#include "utils/amoled_display.hpp"
+#include "utils/dual_display.hpp"
 
 #include "pico/stdlib.h"
 #include "pico/stdio_usb.h"
 #include "pico/multicore.h"
 #include "hardware/watchdog.h"
+#include "hardware/clocks.h"
 
 #include <cstdio>
 
 int main() {
+    /* Set system clock to 150MHz for QSPI display bandwidth */
+    set_sys_clock_khz(SYS_CLOCK_KHZ, true);
+    clock_configure(
+        clk_peri,
+        0,
+        CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
+        SYS_CLOCK_KHZ * 1000U,
+        SYS_CLOCK_KHZ * 1000U
+    );
+
     stdio_init_all();
 
     // Wait for USB host serial connection (up to 5s), then proceed regardless.
@@ -35,14 +48,33 @@ int main() {
     printf("Build: %s %s\n", __DATE__, __TIME__);
     printf("Board: %s\n", PICO_BOARD);
     printf("SDK:   %s\n", PICO_SDK_VERSION_STRING);
+    printf("Clock: %lu kHz\n", static_cast<unsigned long>(SYS_CLOCK_KHZ));
     printf("========================================\n\n");
     stdio_flush();
+
+    /* Initialize AMOLED display */
+    static AMOLED_Display amoled;
+    Stdio_Display stdio_display;
+    bool display_ok = amoled.init();
+
+    if (display_ok) {
+        printf("AMOLED display initialized OK\n");
+    } else {
+        printf("AMOLED display init FAILED — falling back to stdio only\n");
+    }
+    stdio_flush();
+
+    /* Both AMOLED and stdio receive all display calls simultaneously.
+     * Falls back to stdio-only if AMOLED init fails. */
+    static Dual_Display dual(amoled, stdio_display);
+    Display_Interface &display = display_ok
+        ? static_cast<Display_Interface &>(dual)
+        : static_cast<Display_Interface &>(stdio_display);
 
     Encoder_Wrapper encoder;
     IMU_Wrapper imu;
     PIO_I2C depth_bus;
     Depth_Wrapper depth;
-    Stdio_Display display;
 
     // Initialize each sensor — failures are non-fatal
     display.show_status("Init", "Encoder (I2C0)...");
@@ -73,33 +105,41 @@ int main() {
     }
     stdio_flush();
 
-    printf("\nInit summary: encoder=%s imu=%s depth_bus=%s\n\n",
-           enc_ok ? "OK" : "FAIL", imu_ok ? "OK" : "FAIL", bus_ok ? "OK" : "FAIL");
+    {
+        char summary[80];
+        snprintf(summary, sizeof(summary), "encoder=%s imu=%s depth=%s",
+                 enc_ok ? "OK" : "FAIL", imu_ok ? "OK" : "FAIL", bus_ok ? "OK" : "FAIL");
+        display.show_status("Init", summary);
+    }
     stdio_flush();
 
     // Boot calibration — skips sensors that failed init
     Calibration_Manager calibrator(encoder, imu, depth, depth_bus, display);
     CalibrationResult cal = calibrator.run_boot_calibration(enc_ok, imu_ok, bus_ok);
 
-    printf("\nCalibration summary: encoder=%u imu=%u depth=%u\n",
-           static_cast<unsigned>(cal.encoder.status),
-           static_cast<unsigned>(cal.imu.status),
-           static_cast<unsigned>(cal.depth.status));
+    {
+        char cal_summary[80];
+        snprintf(cal_summary, sizeof(cal_summary), "encoder=%u imu=%u depth=%u",
+                 static_cast<unsigned>(cal.encoder.status),
+                 static_cast<unsigned>(cal.imu.status),
+                 static_cast<unsigned>(cal.depth.status));
+        display.show_status("Cal", cal_summary);
+    }
 
     // Enable watchdog — Core 0 and Core 1 both feed it
     watchdog_enable(NAV_WATCHDOG_TIMEOUT_MS, true);
-    printf("Watchdog enabled: %u ms timeout\n", NAV_WATCHDOG_TIMEOUT_MS);
+    display.show_status("Sys", "Watchdog enabled");
 
     // Launch Core 1 navigation loop
     static Core1Context nav_ctx = {&encoder, &imu};
     multicore_launch_core1(core1_entry);
     multicore_fifo_push_blocking(reinterpret_cast<uint32_t>(&nav_ctx));
-    printf("Core 1 navigation loop launched (100Hz)\n");
+    display.show_status("Sys", "Nav loop launched (100Hz)");
 
-    printf("Entering main loop\n\n");
+    display.show_status("Sys", "Running");
     stdio_flush();
 
-    // Main loop — Core 0 handles depth sensor, FIFO consumption, and heartbeat logging
+    // Main loop — Core 0 handles depth sensor, FIFO consumption, display, and heartbeat
     static constexpr uint32_t HEARTBEAT_INTERVAL = 500;  // iterations (~5s at 10ms sleep)
     static constexpr uint32_t LOOP_SLEEP_MS = 10;
     uint32_t loop_count = 0;
@@ -108,6 +148,11 @@ int main() {
 
         if (bus_ok) {
             depth.update();
+        }
+
+        /* Process LVGL rendering events */
+        if (display_ok) {
+            amoled.task_handler();
         }
 
         // Drain FIFO notifications from Core 1 (non-blocking)
