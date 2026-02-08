@@ -61,4 +61,18 @@
  *============================================================================*/
 #define ENCODER_WHEEL_RADIUS_M  0.025f   /* Measuring wheel radius (meters) */
 
+/*============================================================================
+ * Core 1 Navigation Loop
+ *============================================================================*/
+#define NAV_TICK_PERIOD_MS              10U      /* 100Hz tick rate */
+#define NAV_FIFO_TIMEOUT_US             0U       /* Non-blocking FIFO push */
+#define NAV_WATCHDOG_TIMEOUT_MS         100U     /* 10 missed ticks = reboot */
+
+/*============================================================================
+ * Error Recovery Thresholds
+ *============================================================================*/
+#define NAV_ENCODER_FAIL_THRESHOLD      10U      /* Set ESTIMATED after N consecutive failures */
+#define NAV_IMU_FAIL_THRESHOLD          10U
+#define NAV_CRITICAL_FAIL_THRESHOLD     50U      /* Set NAV_CRITICAL after N consecutive failures */
+
 #endif /* MAPPER_CONFIG_H */

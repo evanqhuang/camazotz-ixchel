@@ -7,6 +7,8 @@ add_executable(mapper
     ../drivers/depth_wrapper.cpp
     ../logic/calibration_manager.cpp
     ../logic/nav_math.cpp
+    ../logic/nav_tick.cpp
+    ../logic/core1_nav.cpp
     ../logic/depth_math.cpp
     ../logic/encoder_math.cpp
     ../utils/stdio_display.cpp
@@ -25,6 +27,8 @@ set_source_files_properties(
     ../drivers/depth_wrapper.cpp
     ../logic/calibration_manager.cpp
     ../logic/nav_math.cpp
+    ../logic/nav_tick.cpp
+    ../logic/core1_nav.cpp
     ../logic/depth_math.cpp
     ../logic/encoder_math.cpp
     ../utils/stdio_display.cpp
@@ -41,6 +45,7 @@ target_link_libraries(mapper
     hardware_i2c
     hardware_irq
     hardware_clocks
+    hardware_watchdog
     BNO08x_Pico_Library
     dwm_pico_as5600
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico
