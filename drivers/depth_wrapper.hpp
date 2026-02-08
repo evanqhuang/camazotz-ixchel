@@ -7,6 +7,7 @@
 #define DEPTH_WRAPPER_HPP
 
 #include "drivers/pio_i2c.hpp"
+#include "logic/depth_math.hpp"
 
 #include "pico/stdlib.h"
 
@@ -47,7 +48,6 @@ private:
     float fluid_density_ = 1029.0f;  // kg/m³ seawater default
 
     bool read_prom();
-    static uint8_t crc4(uint16_t n_prom[]);
     bool read_adc(uint32_t *out);
     bool start_conversion(uint8_t cmd);
     void calculate();

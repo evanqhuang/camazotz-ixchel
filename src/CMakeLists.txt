@@ -7,6 +7,8 @@ add_executable(mapper
     ../drivers/depth_wrapper.cpp
     ../logic/calibration_manager.cpp
     ../logic/nav_math.cpp
+    ../logic/depth_math.cpp
+    ../logic/encoder_math.cpp
     ../utils/stdio_display.cpp
 )
 
@@ -23,6 +25,8 @@ set_source_files_properties(
     ../drivers/depth_wrapper.cpp
     ../logic/calibration_manager.cpp
     ../logic/nav_math.cpp
+    ../logic/depth_math.cpp
+    ../logic/encoder_math.cpp
     ../utils/stdio_display.cpp
     PROPERTIES COMPILE_FLAGS "${PROJECT_FLAGS_STR}"
 )

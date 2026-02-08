@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "types.h"
+#include "logic/encoder_math.hpp"
 
 #include "hardware/i2c.h"
 #include "pico/stdlib.h"
@@ -31,9 +32,6 @@ public:
 private:
     static constexpr uint8_t AS5600_ADDR = 0x36;
     static constexpr uint8_t RAW_ANGLE_REG = 0x0C;
-    static constexpr uint16_t TICKS_PER_REV = 4096;
-    static constexpr float TICKS_TO_RAD = (2.0f * 3.14159265358979f) / 4096.0f;
-    static constexpr int16_t HALF_REV = 2048;
     static constexpr uint32_t I2C_TIMEOUT_US = 5000;
 
     as5600_t encoder_ = {};

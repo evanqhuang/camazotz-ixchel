@@ -43,7 +43,7 @@ float Encoder_Wrapper::get_angle_delta() {
     consecutive_failures = 0;
 
     // Apply zero offset calibration
-    current_raw = (current_raw - zero_offset_) & 0x0FFFU;
+    current_raw = encoder_apply_offset(current_raw, zero_offset_);
 
     if (first_read_) {
         first_read_ = false;
@@ -51,19 +51,10 @@ float Encoder_Wrapper::get_angle_delta() {
         return 0.0f;
     }
 
-    // Compute shortest-path delta with 12-bit wraparound handling
-    // Example: 4095 -> 0 should be +1 tick, not -4095 ticks
-    int16_t delta = static_cast<int16_t>(current_raw - last_raw_angle_);
-    if (delta > HALF_REV) {
-        delta -= static_cast<int16_t>(TICKS_PER_REV);
-    }
-    if (delta < -HALF_REV) {
-        delta += static_cast<int16_t>(TICKS_PER_REV);
-    }
-
+    int16_t delta = encoder_shortest_delta(current_raw, last_raw_angle_);
     last_raw_angle_ = current_raw;
 
-    return static_cast<float>(delta) * TICKS_TO_RAD;
+    return encoder_ticks_to_rad(delta);
 }
 
 bool Encoder_Wrapper::read_raw_angle(uint16_t *out) {

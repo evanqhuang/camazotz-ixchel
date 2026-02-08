@@ -52,6 +52,7 @@ RP2350-Touch-AMOLED-1.64-LVGL/
 
 # Test build output
 test/build/
+/build-test/
 
 # Claude Code hooks (per-user, ephemeral)
 .claude/hooks/
