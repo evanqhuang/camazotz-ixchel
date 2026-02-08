@@ -74,5 +74,7 @@
 #define NAV_ENCODER_FAIL_THRESHOLD      10U      /* Set ESTIMATED after N consecutive failures */
 #define NAV_IMU_FAIL_THRESHOLD          10U
 #define NAV_CRITICAL_FAIL_THRESHOLD     50U      /* Set NAV_CRITICAL after N consecutive failures */
+#define NAV_ENCODER_DECAY_FACTOR        0.8f    /* 20% velocity reduction per Tier 2 tick */
+#define NAV_ENCODER_VELOCITY_EPSILON    1e-6f   /* m/s threshold for Tier 2 -> 3 transition */
 
 #endif /* MAPPER_CONFIG_H */

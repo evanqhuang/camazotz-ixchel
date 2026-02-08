@@ -19,6 +19,7 @@
 #define NAV_FLAG_DEPTH_VIRTUAL      (1U << 2U)  /* Depth from terrain model, not sensor */
 #define NAV_FLAG_DEPTH_UNVERIFIED   (1U << 3U)  /* Depth sensor uncalibrated or unvalidated */
 #define NAV_FLAG_NAV_CRITICAL       (1U << 4U)  /* Navigation solution degraded/unreliable */
+#define NAV_FLAG_ENCODER_LOST       (1U << 5U)  /* Encoder recovery exhausted, map paused */
 
 /*============================================================================
  * Navigation State Structure

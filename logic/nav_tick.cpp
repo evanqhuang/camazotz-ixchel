@@ -8,24 +8,44 @@
 #include "config.h"
 #include <pico.h>
 #include <cstdint>
+#include <cmath>
 
 __not_in_flash_func(uint8_t) nav_tick_update(NavTickState &state,
                                                const SensorSnapshot &snap,
                                                nav_state_compact_t *out) {
     uint8_t status_flags = 0;
     float encoder_delta;
+    float delta_dist;
     Quat quat;
 
-    /* Encoder fallback logic */
+    constexpr float dt_s = NAV_TICK_PERIOD_MS * 0.001f;
+
+    /* Encoder tiered recovery */
     if (snap.encoder_valid) {
         encoder_delta = snap.encoder_delta;
         state.last_good_encoder_delta = encoder_delta;
+        delta_dist = encoder_delta * ENCODER_WHEEL_RADIUS_M;
+        state.last_velocity = delta_dist / dt_s;
         state.encoder_fail_streak = 0;
     } else {
-        encoder_delta = state.last_good_encoder_delta;
         if (state.encoder_fail_streak < UINT16_MAX) {
             state.encoder_fail_streak++;
         }
+
+        if (state.encoder_fail_streak < NAV_ENCODER_FAIL_THRESHOLD) {
+            /* Tier 1: Short-term extrapolation at constant velocity */
+            delta_dist = state.last_velocity * dt_s;
+        } else if (fabsf(state.last_velocity) >= NAV_ENCODER_VELOCITY_EPSILON) {
+            /* Tier 2: Decay velocity by 20% per tick */
+            state.last_velocity *= NAV_ENCODER_DECAY_FACTOR;
+            delta_dist = state.last_velocity * dt_s;
+        } else {
+            /* Tier 3: Hard stop — velocity exhausted */
+            state.last_velocity = 0.0f;
+            delta_dist = 0.0f;
+        }
+
+        encoder_delta = delta_dist / ENCODER_WHEEL_RADIUS_M;
     }
 
     /* IMU fallback logic */
@@ -43,6 +63,11 @@ __not_in_flash_func(uint8_t) nav_tick_update(NavTickState &state,
     /* Build status flags */
     if (state.encoder_fail_streak > 0) {
         status_flags |= NAV_FLAG_ENCODER_ESTIMATED;
+
+        if (state.encoder_fail_streak >= NAV_ENCODER_FAIL_THRESHOLD &&
+            fabsf(state.last_velocity) < NAV_ENCODER_VELOCITY_EPSILON) {
+            status_flags |= NAV_FLAG_ENCODER_LOST;
+        }
     }
     if (state.imu_fail_streak > 0) {
         status_flags |= NAV_FLAG_IMU_ESTIMATED;
@@ -52,8 +77,8 @@ __not_in_flash_func(uint8_t) nav_tick_update(NavTickState &state,
         status_flags |= NAV_FLAG_NAV_CRITICAL;
     }
 
-    /* Convert encoder delta to distance */
-    float delta_dist = encoder_delta * ENCODER_WHEEL_RADIUS_M;
+    /* Accumulate total path distance */
+    state.total_distance += static_cast<double>(fabsf(delta_dist));
 
     /* Navigation pipeline: quaternion -> rotation -> displacement -> position */
     double R[3][3];

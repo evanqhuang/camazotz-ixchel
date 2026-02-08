@@ -37,6 +37,8 @@ struct NavTickState {
     uint16_t encoder_fail_streak = 0;
     uint16_t imu_fail_streak = 0;
     uint32_t tick_count = 0;
+    float last_velocity = 0.0f;    // m/s from last successful encoder read
+    double total_distance = 0.0;   // cumulative path length (meters)
 };
 
 /*============================================================================
