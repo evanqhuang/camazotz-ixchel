@@ -11,6 +11,7 @@
 #include "drivers/pio_i2c.hpp"
 #include "drivers/depth_wrapper.hpp"
 #include "drivers/sdio_logger.hpp"
+#include "drivers/battery_monitor.hpp"
 #include "logic/calibration_manager.hpp"
 #include "logic/core1_nav.hpp"
 #include "logic/depth_recovery.hpp"
@@ -220,6 +221,12 @@ int main() {
     }
     stdio_flush();
 
+    // Initialize battery monitor (ADC on GP26)
+    static Battery_Monitor battery;
+    battery.init();
+    display.show_status("Sys", "Battery monitor initialized");
+    stdio_flush();
+
     // Enable watchdog — Core 0 and Core 1 both feed it
     watchdog_enable(NAV_WATCHDOG_TIMEOUT_MS, true);
     display.show_status("Sys", "Watchdog enabled");
@@ -257,9 +264,14 @@ int main() {
     uint8_t prev_status_flags = 0;
     static DebounceState tare_debounce = {};
     double total_distance_core0 = 0.0;
+    bool prev_low_battery = false;
 
     while (true) {
         watchdog_update();
+
+        /* Update battery reading (throttled to 1Hz internally) */
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        battery.update(now);
 
         /* Read nav state from Core 1 every iteration for depth recovery */
         nav_state_compact_t nav = core1_get_nav_state();
@@ -338,8 +350,24 @@ int main() {
         }
         prev_status_flags = combined_flags;
 
+        /* Low battery edge-triggered alert */
+        bool curr_low_battery = battery.low_battery();
+        if (curr_low_battery && !prev_low_battery) {
+            if (display_ok) {
+                nav_screen.show_critical_alert("LOW BATTERY");
+            }
+            if (sd_ok) {
+                sd_logger.log_event("LOW_BATTERY", combined_flags);
+            }
+            printf("[ALERT] LOW BATTERY (%u%%)\n", battery.percent());
+        } else if (!curr_low_battery && prev_low_battery) {
+            if (display_ok) {
+                nav_screen.hide_critical_alert();
+            }
+        }
+        prev_low_battery = curr_low_battery;
+
         /* Poll tare button (non-blocking) */
-        uint32_t now = to_ms_since_boot(get_absolute_time());
         bool raw_pressed = !gpio_get(TARE_BUTTON_PIN);
         if (debounce_check(now, raw_pressed, TARE_DEBOUNCE_MS, tare_debounce)) {
             bool tare_ok = calibrator.manual_tare();
@@ -361,6 +389,7 @@ int main() {
                               static_cast<float>(total_distance_core0),
                               combined_flags,
                               sd_ok && sd_logger.is_operational(),
+                              battery.percent(), battery.on_battery(),
                               now);
         }
 
@@ -396,7 +425,7 @@ int main() {
 
             printf("[heartbeat] uptime=%lu ms  pos=(%.4f, %.4f, %.4f)  depth_z=%.4f  "
                    "dist=%.1f  flags=0x%02X  jitter=%lu/%lu/%lu us  drops=%lu  "
-                   "sd=%s rec=%lu/%lu\n",
+                   "sd=%s rec=%lu/%lu  bat=%.2fV(%u%%)\n",
                    static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())),
                    static_cast<double>(nav.pos_x),
                    static_cast<double>(nav.pos_y),
@@ -410,7 +439,9 @@ int main() {
                    static_cast<unsigned long>(drops),
                    sd_stats.mounted ? (sd_stats.critical_error ? "ERR" : "OK") : "OFF",
                    static_cast<unsigned long>(sd_stats.records_written),
-                   static_cast<unsigned long>(sd_stats.records_dropped));
+                   static_cast<unsigned long>(sd_stats.records_dropped),
+                   static_cast<double>(battery.voltage()),
+                   battery.percent());
             stdio_flush();
             loop_count = 0;
         }

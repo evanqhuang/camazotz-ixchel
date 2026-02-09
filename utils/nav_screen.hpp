@@ -18,7 +18,7 @@ public:
 
     void update(float heading_deg, float depth_m, float pos_x, float pos_y,
                 float total_dist_m, uint8_t status_flags, bool sd_ok,
-                uint32_t now_ms);
+                uint8_t battery_pct, bool on_battery, uint32_t now_ms);
 
     void show_critical_alert(const char *msg);
     void hide_critical_alert();
@@ -53,6 +53,8 @@ private:
     lv_obj_t *depth_value_ = nullptr;
     lv_obj_t *dist_title_ = nullptr;
     lv_obj_t *dist_value_ = nullptr;
+    lv_obj_t *bat_title_ = nullptr;
+    lv_obj_t *bat_value_ = nullptr;
 
     /* Status bar */
     lv_obj_t *status_bar_ = nullptr;
@@ -89,6 +91,7 @@ private:
     void update_sensor_status(lv_obj_t *label, const char *prefix,
                               bool estimated, bool lost);
     void update_sd_status(bool sd_ok);
+    void update_battery_status(uint8_t pct, bool on_battery);
     void update_trail(float wx, float wy);
 };
 

@@ -7,6 +7,7 @@ add_executable(mapper
     ../drivers/depth_wrapper.cpp
     ../drivers/amoled_driver.cpp
     ../drivers/sdio_logger.cpp
+    ../drivers/battery_monitor.cpp
     ../drivers/hw_config.c
     ../logic/calibration_manager.cpp
     ../logic/nav_math.cpp
@@ -15,6 +16,7 @@ add_executable(mapper
     ../logic/depth_math.cpp
     ../logic/encoder_math.cpp
     ../logic/depth_recovery.cpp
+    ../logic/battery_math.cpp
     ../utils/stdio_display.cpp
     ../utils/lvgl_port.cpp
     ../utils/amoled_display.cpp
@@ -38,6 +40,7 @@ set_source_files_properties(
     ../drivers/depth_wrapper.cpp
     ../drivers/amoled_driver.cpp
     ../drivers/sdio_logger.cpp
+    ../drivers/battery_monitor.cpp
     ../logic/calibration_manager.cpp
     ../logic/nav_math.cpp
     ../logic/nav_tick.cpp
@@ -45,6 +48,7 @@ set_source_files_properties(
     ../logic/depth_math.cpp
     ../logic/encoder_math.cpp
     ../logic/depth_recovery.cpp
+    ../logic/battery_math.cpp
     ../utils/stdio_display.cpp
     ../utils/lvgl_port.cpp
     ../utils/amoled_display.cpp
@@ -67,6 +71,7 @@ target_link_libraries(mapper
     hardware_clocks
     hardware_watchdog
     hardware_dma
+    hardware_adc
     BNO08x_Pico_Library
     dwm_pico_as5600
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico

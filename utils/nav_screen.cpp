@@ -141,6 +141,19 @@ void Nav_Screen::create_info_panel() {
     lv_obj_set_style_text_color(dist_value_, COLOR_WHITE, LV_PART_MAIN);
     lv_obj_set_style_text_font(dist_value_, &lv_font_montserrat_24, LV_PART_MAIN);
     lv_obj_set_pos(dist_value_, PANEL_X, 134);
+
+    /* BAT section */
+    bat_title_ = lv_label_create(screen_);
+    lv_label_set_text(bat_title_, "BAT");
+    lv_obj_set_style_text_color(bat_title_, COLOR_GRAY, LV_PART_MAIN);
+    lv_obj_set_style_text_font(bat_title_, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_pos(bat_title_, PANEL_X, 172);
+
+    bat_value_ = lv_label_create(screen_);
+    lv_label_set_text(bat_value_, "---%");
+    lv_obj_set_style_text_color(bat_value_, COLOR_GREEN, LV_PART_MAIN);
+    lv_obj_set_style_text_font(bat_value_, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_pos(bat_value_, PANEL_X, 190);
 }
 
 void Nav_Screen::create_status_bar() {
@@ -247,7 +260,7 @@ void Nav_Screen::update_trail(float wx, float wy) {
 
 void Nav_Screen::update(float heading_deg, float depth_m, float pos_x, float pos_y,
                         float total_dist_m, uint8_t status_flags, bool sd_ok,
-                        uint32_t now_ms) {
+                        uint8_t battery_pct, bool on_battery, uint32_t now_ms) {
     /* Throttle to 5Hz */
     if ((now_ms - last_update_ms_) < UPDATE_INTERVAL_MS) {
         /* Still check tare auto-hide */
@@ -292,6 +305,7 @@ void Nav_Screen::update(float heading_deg, float depth_m, float pos_x, float pos
                          (status_flags & NAV_FLAG_DEPTH_VIRTUAL) != 0,
                          (status_flags & NAV_FLAG_NAV_CRITICAL) != 0);
     update_sd_status(sd_ok);
+    update_battery_status(battery_pct, on_battery);
 
     /* Auto-hide tare popup */
     if (!lv_obj_has_flag(tare_box_, LV_OBJ_FLAG_HIDDEN) &&
@@ -340,5 +354,26 @@ void Nav_Screen::update_sd_status(bool sd_ok) {
     } else {
         lv_label_set_text(sd_status_, "SD:ERR");
         lv_obj_set_style_text_color(sd_status_, COLOR_RED, LV_PART_MAIN);
+    }
+}
+
+void Nav_Screen::update_battery_status(uint8_t pct, bool on_battery) {
+    char buf[8];
+    if (!on_battery) {
+        /* USB power — show cyan "USB" */
+        lv_label_set_text(bat_value_, "USB");
+        lv_obj_set_style_text_color(bat_value_, COLOR_CYAN, LV_PART_MAIN);
+    } else {
+        snprintf(buf, sizeof(buf), "%u%%", pct);
+        lv_label_set_text(bat_value_, buf);
+
+        /* Color code by percentage */
+        if (pct <= 10) {
+            lv_obj_set_style_text_color(bat_value_, COLOR_RED, LV_PART_MAIN);
+        } else if (pct <= 30) {
+            lv_obj_set_style_text_color(bat_value_, COLOR_YELLOW, LV_PART_MAIN);
+        } else {
+            lv_obj_set_style_text_color(bat_value_, COLOR_GREEN, LV_PART_MAIN);
+        }
     }
 }

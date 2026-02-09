@@ -97,6 +97,21 @@
 #define SYS_CLOCK_KHZ               150000U
 
 /*============================================================================
+ * Battery Monitoring (ADC)
+ *============================================================================*/
+#define BAT_ADC_PIN             26U      /* GP26 — BAT_ADC via 200K/100K divider */
+#define BAT_ADC_CHANNEL         0U       /* ADC input 0 (GP26 = ADC0) */
+#define BAT_VOLTAGE_DIVIDER     3.0f     /* R30(200K) + R35(100K) = VCC/3 */
+#define BAT_ADC_VREF            3.3f     /* ADC reference voltage */
+#define BAT_ADC_RESOLUTION      4096U    /* 12-bit ADC */
+#define BAT_EMA_ALPHA           0.05f    /* EMA smoothing (~20 sample lag) */
+#define BAT_SAMPLE_INTERVAL_MS  1000U    /* Sample every 1s */
+#define BAT_LOW_THRESHOLD_PCT   10U      /* Low battery alert (%) */
+#define BAT_VBUS_THRESHOLD_V    4.5f     /* Above = USB power (no battery) */
+#define BAT_MIN_VOLTAGE         3.0f     /* 0% */
+#define BAT_MAX_VOLTAGE         4.2f     /* 100% */
+
+/*============================================================================
  * Error Recovery Thresholds
  *============================================================================*/
 #define NAV_ENCODER_FAIL_THRESHOLD      10U      /* Set ESTIMATED after N consecutive failures */

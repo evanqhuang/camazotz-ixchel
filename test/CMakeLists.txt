@@ -98,6 +98,14 @@ add_executable(trail_map_tests
 target_compile_options(trail_map_tests PRIVATE ${TEST_WARNING_FLAGS})
 target_link_libraries(trail_map_tests GTest::gtest_main)
 
+# --- battery_math_tests ---
+add_executable(battery_math_tests
+  test_battery_math.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../logic/battery_math.cpp
+)
+target_compile_options(battery_math_tests PRIVATE ${TEST_WARNING_FLAGS})
+target_link_libraries(battery_math_tests GTest::gtest_main)
+
 # Enable testing
 enable_testing()
 include(GoogleTest)
@@ -110,3 +118,4 @@ gtest_discover_tests(display_tests)
 gtest_discover_tests(depth_recovery_tests)
 gtest_discover_tests(button_debounce_tests)
 gtest_discover_tests(trail_map_tests)
+gtest_discover_tests(battery_math_tests)
