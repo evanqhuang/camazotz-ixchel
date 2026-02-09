@@ -21,6 +21,7 @@ add_executable(mapper
     ../utils/nav_screen.cpp
     ../utils/calib_screen.cpp
     ../utils/button_debounce.cpp
+    ../utils/trail_map.cpp
 )
 
 # Generate PIO headers from assembly
@@ -50,6 +51,7 @@ set_source_files_properties(
     ../utils/nav_screen.cpp
     ../utils/calib_screen.cpp
     ../utils/button_debounce.cpp
+    ../utils/trail_map.cpp
     PROPERTIES COMPILE_FLAGS "${PROJECT_FLAGS_STR}"
 )
 

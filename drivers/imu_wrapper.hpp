@@ -28,6 +28,9 @@ public:
     void hardware_reset();
 
     uint8_t get_calibration_accuracy();
+    uint8_t get_gyro_accuracy() const { return last_gyro_accuracy_; }
+    uint8_t get_accel_accuracy() const { return last_accel_accuracy_; }
+    uint8_t get_mag_accuracy() const { return last_mag_accuracy_; }
     bool tare_now(bool z_axis_only = false);
     bool save_tare();
     bool clear_tare();
@@ -51,6 +54,12 @@ private:
     BNO08x imu_;
     Quat cached_quat_ = {1.0f, 0.0f, 0.0f, 0.0f};
     Vec3 cached_angular_vel_ = {0.0f, 0.0f, 0.0f};
+
+    // Per-sensor accuracy tracking (library has bugs, we capture directly)
+    uint8_t last_rv_accuracy_ = 0;    // Rotation vector
+    uint8_t last_gyro_accuracy_ = 0;  // Calibrated gyroscope
+    uint8_t last_accel_accuracy_ = 0; // Accelerometer
+    uint8_t last_mag_accuracy_ = 0;   // Magnetometer
 
     void bus_recovery();
     bool drain_events();

@@ -239,9 +239,27 @@ void Calib_Screen::update_instructions(CalibPhase phase) {
 }
 
 void Calib_Screen::update_accuracy(uint8_t accuracy) {
+    if (accuracy_label_ == nullptr || accuracy_bar_ == nullptr) {
+        printf("[CALIB] ERROR: accuracy widgets null\n");
+        return;
+    }
+
+    /* Skip update if value unchanged (avoid redundant LVGL work) */
+    static uint8_t last_acc = 255;
+    if (accuracy == last_acc) {
+        return;
+    }
+    last_acc = accuracy;
+
+    printf("[CALIB] update_accuracy(%u) called\n", accuracy);
+
     char buf[24];
     snprintf(buf, sizeof(buf), "ACCURACY: %u/3", accuracy);
     lv_label_set_text(accuracy_label_, buf);
+
+    /* Debug: verify text was actually set */
+    const char *actual = lv_label_get_text(accuracy_label_);
+    printf("[CALIB] Label text now: %s\n", actual);
 
     lv_bar_set_value(accuracy_bar_, accuracy, LV_ANIM_ON);
 
@@ -257,6 +275,9 @@ void Calib_Screen::update_accuracy(uint8_t accuracy) {
         bar_color = COLOR_GREEN;
     }
     lv_obj_set_style_bg_color(accuracy_bar_, bar_color, LV_PART_INDICATOR);
+
+    /* Force screen invalidation in case LVGL text comparison optimized away the update */
+    lv_obj_invalidate(screen_);
 }
 
 void Calib_Screen::update_elapsed(uint32_t elapsed_ms) {
@@ -270,9 +291,10 @@ void Calib_Screen::update_elapsed(uint32_t elapsed_ms) {
     lv_label_set_text(elapsed_label_, buf);
 }
 
-CalibPhase Calib_Screen::compute_next_phase(uint8_t accuracy, uint32_t phase_dwell_ms) const {
-    /* 3/3 achieved - complete */
-    if (accuracy >= 3) {
+CalibPhase Calib_Screen::compute_next_phase(uint8_t gyro_acc, uint8_t accel_acc, uint8_t mag_acc,
+                                            uint32_t phase_dwell_ms) const {
+    /* All sensors calibrated (or mag at least 2 for rotation vector) */
+    if (gyro_acc >= 3 && accel_acc >= 3 && mag_acc >= 2) {
         return CalibPhase::Complete;
     }
 
@@ -287,19 +309,19 @@ CalibPhase Calib_Screen::compute_next_phase(uint8_t accuracy, uint32_t phase_dwe
             }
             break;
         case CalibPhase::Stationary:
-            /* Advance when accuracy >= 1 and dwell time met */
-            if (accuracy >= 1 && dwell_ok) {
+            /* GYRO phase: advance when gyro accuracy >= 2 */
+            if (gyro_acc >= 2 && dwell_ok) {
                 return CalibPhase::Orientation;
             }
             break;
         case CalibPhase::Orientation:
-            /* Advance when accuracy >= 2 and dwell time met */
-            if (accuracy >= 2 && dwell_ok) {
+            /* ACCEL phase: advance when accel accuracy >= 2 */
+            if (accel_acc >= 2 && dwell_ok) {
                 return CalibPhase::Magnetometer;
             }
             break;
         case CalibPhase::Magnetometer:
-            /* Stay here until 3/3 (handled above) */
+            /* MAG phase: stay until complete (handled above) */
             break;
         default:
             break;
@@ -359,37 +381,51 @@ CalibWalkthroughResult Calib_Screen::run(IMU_Wrapper &imu) {
             return result;
         }
 
-        /* Poll IMU accuracy */
-        accuracy = imu.get_calibration_accuracy();
+        /* Poll IMU accuracy - get individual sensor accuracies */
+        accuracy = imu.get_calibration_accuracy();  // RV accuracy (for display)
+        uint8_t gyro_acc = imu.get_gyro_accuracy();
+        uint8_t accel_acc = imu.get_accel_accuracy();
+        uint8_t mag_acc = imu.get_mag_accuracy();
 
-        /* Check for completion */
-        if (accuracy >= 3) {
-            printf("[CALIB] Achieved 3/3 accuracy after %lu ms\n",
-                   static_cast<unsigned long>(elapsed_ms));
+        /* Debug: log accuracy every 2 seconds */
+        static uint32_t last_debug_ms = 0;
+        if (now_ms - last_debug_ms >= 2000) {
+            printf("[CALIB] gyro=%u accel=%u mag=%u rv=%u, phase=%u, dwell=%lu ms\n",
+                   gyro_acc, accel_acc, mag_acc, accuracy,
+                   static_cast<unsigned>(current_phase_),
+                   static_cast<unsigned long>(phase_dwell_ms));
+            stdio_flush();
+            last_debug_ms = now_ms;
+        }
+
+        /* Check for completion - all sensors calibrated */
+        if (gyro_acc >= 3 && accel_acc >= 3 && mag_acc >= 2) {
+            printf("[CALIB] Calibration complete after %lu ms (gyro=%u accel=%u mag=%u)\n",
+                   static_cast<unsigned long>(elapsed_ms), gyro_acc, accel_acc, mag_acc);
             stdio_flush();
 
             current_phase_ = CalibPhase::Complete;
             update_phase_dots(current_phase_);
             update_instructions(current_phase_);
-            update_accuracy(accuracy);
+            update_accuracy(3);  // Display as 3/3
             update_elapsed(elapsed_ms);
             lv_task_handler();
             sleep_ms(1000);  /* Brief pause to show complete message */
 
             result.final_phase = CalibPhase::Complete;
-            result.final_accuracy = accuracy;
+            result.final_accuracy = 3;
             result.elapsed_ms = elapsed_ms;
             result.success = true;
             return result;
         }
 
         /* Compute phase transitions */
-        CalibPhase next_phase = compute_next_phase(accuracy, phase_dwell_ms);
+        CalibPhase next_phase = compute_next_phase(gyro_acc, accel_acc, mag_acc, phase_dwell_ms);
         if (next_phase != current_phase_) {
-            printf("[CALIB] Phase transition: %u -> %u (accuracy=%u, dwell=%lu ms)\n",
+            printf("[CALIB] Phase transition: %u -> %u (g=%u a=%u m=%u, dwell=%lu ms)\n",
                    static_cast<unsigned>(current_phase_),
                    static_cast<unsigned>(next_phase),
-                   accuracy,
+                   gyro_acc, accel_acc, mag_acc,
                    static_cast<unsigned long>(phase_dwell_ms));
             stdio_flush();
 
@@ -397,10 +433,19 @@ CalibWalkthroughResult Calib_Screen::run(IMU_Wrapper &imu) {
             phase_start_ms_ = now_ms;
         }
 
+        /* Show phase-appropriate accuracy on UI */
+        uint8_t display_acc;
+        switch (current_phase_) {
+            case CalibPhase::Stationary:    display_acc = gyro_acc;  break;
+            case CalibPhase::Orientation:   display_acc = accel_acc; break;
+            case CalibPhase::Magnetometer:  display_acc = mag_acc;   break;
+            default:                        display_acc = accuracy;  break;
+        }
+
         /* Update UI */
         update_phase_dots(current_phase_);
         update_instructions(current_phase_);
-        update_accuracy(accuracy);
+        update_accuracy(display_acc);
         update_elapsed(elapsed_ms);
 
         /* Process LVGL rendering */

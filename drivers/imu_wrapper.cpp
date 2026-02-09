@@ -99,7 +99,44 @@ bool IMU_Wrapper::init() {
         return false;
     }
 
-    // 6. Enable sensor reports at 100Hz
+    // 5b. Print product IDs and reset reason for diagnostics
+    printf("[IMU] Product IDs (%u entries):\n", imu_.prodIds.numEntries);
+    for (int i = 0; i < imu_.prodIds.numEntries && i < 5; i++) {
+        printf("  [%d] ver=%u.%u.%u part=%lu build=%lu rst=%u\n",
+               i,
+               imu_.prodIds.entry[i].swVersionMajor,
+               imu_.prodIds.entry[i].swVersionMinor,
+               imu_.prodIds.entry[i].swVersionPatch,
+               static_cast<unsigned long>(imu_.prodIds.entry[i].swPartNumber),
+               static_cast<unsigned long>(imu_.prodIds.entry[i].swBuildNumber),
+               imu_.prodIds.entry[i].resetCause);
+    }
+    stdio_flush();
+
+    // 6. Enable dynamic calibration for gyro, accel, and magnetometer
+    // Per SH-2 Reference Manual and Calibration Procedure 1000-4044
+    // SH2_CAL_ACCEL=0x01, SH2_CAL_GYRO=0x02, SH2_CAL_MAG=0x04
+    if (!imu_.setCalibrationConfig(0x07)) {
+        printf("[IMU] Warning: failed to enable calibration config\n");
+        // Not fatal - continue anyway
+    } else {
+        printf("[IMU] setCalibrationConfig(0x07) succeeded\n");
+    }
+
+    // 6b. Read back calibration config to verify it was set
+    uint8_t cal_config_readback = 0;
+    if (sh2_getCalConfig(&cal_config_readback) == SH2_OK) {
+        printf("[IMU] Calibration config readback: 0x%02X (accel=%d gyro=%d mag=%d)\n",
+               cal_config_readback,
+               (cal_config_readback & 0x01) ? 1 : 0,
+               (cal_config_readback & 0x02) ? 1 : 0,
+               (cal_config_readback & 0x04) ? 1 : 0);
+    } else {
+        printf("[IMU] Warning: failed to read back calibration config\n");
+    }
+    stdio_flush();
+
+    // 7. Enable sensor reports at 100Hz
     if (!enable_reports()) {
         printf("[IMU] Failed to enable reports\n");
         return false;
@@ -191,18 +228,28 @@ bool IMU_Wrapper::drain_events() {
         }
 
         uint8_t event_id = imu_.getSensorEventID();
+        // Capture status/accuracy immediately after getSensorEvent()
+        // The library's _sensor_value->status contains accuracy for THIS event
+        uint8_t event_status = imu_.getQuatAccuracy(); // Works for all event types
 
         if (event_id == SH2_ROTATION_VECTOR) {
             cached_quat_.x = imu_.getQuatI();
             cached_quat_.y = imu_.getQuatJ();
             cached_quat_.z = imu_.getQuatK();
             cached_quat_.w = imu_.getQuatReal();
+            last_rv_accuracy_ = event_status;
             got_event = true;
         } else if (event_id == SH2_GYRO_INTEGRATED_RV) {
             cached_angular_vel_.x = imu_.getGyroIntegratedRVangVelX();
             cached_angular_vel_.y = imu_.getGyroIntegratedRVangVelY();
             cached_angular_vel_.z = imu_.getGyroIntegratedRVangVelZ();
             got_event = true;
+        } else if (event_id == SH2_GYROSCOPE_CALIBRATED) {
+            last_gyro_accuracy_ = event_status;
+        } else if (event_id == SH2_ACCELEROMETER) {
+            last_accel_accuracy_ = event_status;
+        } else if (event_id == SH2_MAGNETIC_FIELD_CALIBRATED) {
+            last_mag_accuracy_ = event_status;
         }
     }
 
@@ -211,17 +258,56 @@ bool IMU_Wrapper::drain_events() {
 
 bool IMU_Wrapper::enable_reports() {
     if (!imu_.enableRotationVector(REPORT_INTERVAL_MS)) {
+        printf("[IMU] Failed to enable rotation vector\n");
         return false;
     }
+    printf("[IMU] Rotation vector enabled at %u ms\n", REPORT_INTERVAL_MS);
+
     if (!imu_.enableGyroIntegratedRotationVector(REPORT_INTERVAL_MS)) {
+        printf("[IMU] Failed to enable gyro integrated RV\n");
         return false;
     }
+    printf("[IMU] Gyro integrated RV enabled at %u ms\n", REPORT_INTERVAL_MS);
+
+    // Enable additional reports to check individual sensor calibration
+    if (!imu_.enableGyro(100)) { // 10Hz calibrated gyro
+        printf("[IMU] Warning: failed to enable gyro report\n");
+    } else {
+        printf("[IMU] Calibrated gyro enabled at 100 ms\n");
+    }
+
+    if (!imu_.enableAccelerometer(100)) { // 10Hz calibrated accel
+        printf("[IMU] Warning: failed to enable accel report\n");
+    } else {
+        printf("[IMU] Calibrated accel enabled at 100 ms\n");
+    }
+
+    if (!imu_.enableMagnetometer(100)) { // 10Hz calibrated mag
+        printf("[IMU] Warning: failed to enable mag report\n");
+    } else {
+        printf("[IMU] Calibrated mag enabled at 100 ms\n");
+    }
+
+    stdio_flush();
     return true;
 }
 
 uint8_t IMU_Wrapper::get_calibration_accuracy() {
-    (void)drain_events();
-    return imu_.getQuatAccuracy();
+    // Drain events to update all accuracy values (fixes library bugs where
+    // getGyroAccuracy() returns an uninitialized member variable)
+    drain_events();
+
+    // Debug: print sensor calibration status every 2 seconds
+    static uint32_t debug_counter = 0;
+    if (++debug_counter % 20 == 0) {
+        // Use our tracked values (captured in drain_events) instead of buggy accessors
+        printf("[IMU] rv=%u gyro=%u accel=%u mag=%u\n",
+               last_rv_accuracy_, last_gyro_accuracy_,
+               last_accel_accuracy_, last_mag_accuracy_);
+        stdio_flush();
+    }
+
+    return last_rv_accuracy_;
 }
 
 bool IMU_Wrapper::tare_now(bool z_axis_only) {

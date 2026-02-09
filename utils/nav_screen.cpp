@@ -73,6 +73,33 @@ void Nav_Screen::create_map_area() {
     lv_obj_set_style_text_color(pos_label_, COLOR_WHITE, LV_PART_MAIN);
     lv_obj_set_style_text_font(pos_label_, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_set_pos(pos_label_, MAP_W / 2 + 4, MAP_H / 2 + 4);
+
+    /* Trail polyline — behind crosshairs, dim teal, 2px */
+    trail_line_ = lv_line_create(map_container_);
+    lv_obj_set_style_line_color(trail_line_, LV_COLOR_MAKE(0x00, 0x99, 0x99), LV_PART_MAIN);
+    lv_obj_set_style_line_width(trail_line_, 2, LV_PART_MAIN);
+    lv_obj_set_style_line_opa(trail_line_, LV_OPA_70, LV_PART_MAIN);
+
+    /* Start position marker — green 7x7 circle, initially hidden */
+    start_marker_ = lv_obj_create(map_container_);
+    lv_obj_remove_style_all(start_marker_);
+    lv_obj_set_size(start_marker_, 7, 7);
+    lv_obj_set_style_radius(start_marker_, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(start_marker_, COLOR_GREEN, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(start_marker_, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_add_flag(start_marker_, LV_OBJ_FLAG_HIDDEN);
+
+    /* Current position dot — cyan 7x7 circle, initially hidden */
+    pos_dot_ = lv_obj_create(map_container_);
+    lv_obj_remove_style_all(pos_dot_);
+    lv_obj_set_size(pos_dot_, 7, 7);
+    lv_obj_set_style_radius(pos_dot_, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(pos_dot_, COLOR_CYAN, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(pos_dot_, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_add_flag(pos_dot_, LV_OBJ_FLAG_HIDDEN);
+
+    /* Z-order: trail line at back, then crosshairs, then markers on top */
+    lv_obj_move_to_index(trail_line_, 0);
 }
 
 void Nav_Screen::create_info_panel() {
@@ -181,6 +208,43 @@ void Nav_Screen::create_tare_popup() {
     lv_obj_center(tare_label_);
 }
 
+void Nav_Screen::update_trail(float wx, float wy) {
+    trail_.add_point(wx, wy);
+
+    uint16_t pt_count = trail_.count();
+    if (pt_count < 2) {
+        return;
+    }
+
+    TrailViewport vp = trail_.compute_viewport(MAP_W, MAP_H);
+
+    /* Remap all points to pixel coordinates */
+    for (uint16_t i = 0; i < pt_count; i++) {
+        TrailPoint pt = trail_.point_at(i);
+        int16_t pixel_x = 0;
+        int16_t pixel_y = 0;
+        trail_.world_to_pixel(pt.x, pt.y, vp, pixel_x, pixel_y);
+        trail_pixels_[i].x = pixel_x;
+        trail_pixels_[i].y = pixel_y;
+    }
+
+    lv_line_set_points(trail_line_, trail_pixels_, pt_count);
+
+    /* Position start marker at world origin (0, 0) */
+    int16_t start_px = 0;
+    int16_t start_py = 0;
+    trail_.world_to_pixel(0.0f, 0.0f, vp, start_px, start_py);
+    lv_obj_set_pos(start_marker_, start_px - 3, start_py - 3);
+    lv_obj_clear_flag(start_marker_, LV_OBJ_FLAG_HIDDEN);
+
+    /* Position current dot at current world position */
+    int16_t cur_px = 0;
+    int16_t cur_py = 0;
+    trail_.world_to_pixel(wx, wy, vp, cur_px, cur_py);
+    lv_obj_set_pos(pos_dot_, cur_px - 3, cur_py - 3);
+    lv_obj_clear_flag(pos_dot_, LV_OBJ_FLAG_HIDDEN);
+}
+
 void Nav_Screen::update(float heading_deg, float depth_m, float pos_x, float pos_y,
                         float total_dist_m, uint8_t status_flags, bool sd_ok,
                         uint32_t now_ms) {
@@ -213,6 +277,9 @@ void Nav_Screen::update(float heading_deg, float depth_m, float pos_x, float pos
     snprintf(pos_buf, sizeof(pos_buf), "(%.1f, %.1f)",
              static_cast<double>(pos_x), static_cast<double>(pos_y));
     lv_label_set_text(pos_label_, pos_buf);
+
+    /* Update trail map */
+    update_trail(pos_x, pos_y);
 
     /* Sensor status */
     update_sensor_status(enc_status_, "ENC",

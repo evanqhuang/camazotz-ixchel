@@ -8,6 +8,7 @@
 
 #include "types.h"
 #include "lvgl.h"
+#include "utils/trail_map.hpp"
 #include <cstdint>
 
 class Nav_Screen {
@@ -69,6 +70,13 @@ private:
     lv_obj_t *tare_label_ = nullptr;
     uint32_t tare_show_ms_ = 0;
 
+    /* Trail map */
+    TrailMap trail_;
+    lv_point_t trail_pixels_[TrailMap::MAX_POINTS] = {};
+    lv_obj_t *trail_line_ = nullptr;
+    lv_obj_t *start_marker_ = nullptr;
+    lv_obj_t *pos_dot_ = nullptr;
+
     /* Throttle state */
     uint32_t last_update_ms_ = 0;
 
@@ -81,6 +89,7 @@ private:
     void update_sensor_status(lv_obj_t *label, const char *prefix,
                               bool estimated, bool lost);
     void update_sd_status(bool sd_ok);
+    void update_trail(float wx, float wy);
 };
 
 #endif /* NAV_SCREEN_HPP */

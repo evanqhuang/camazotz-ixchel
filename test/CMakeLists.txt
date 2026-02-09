@@ -90,6 +90,14 @@ add_executable(button_debounce_tests
 target_compile_options(button_debounce_tests PRIVATE ${TEST_WARNING_FLAGS})
 target_link_libraries(button_debounce_tests GTest::gtest_main)
 
+# --- trail_map_tests ---
+add_executable(trail_map_tests
+  test_trail_map.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../utils/trail_map.cpp
+)
+target_compile_options(trail_map_tests PRIVATE ${TEST_WARNING_FLAGS})
+target_link_libraries(trail_map_tests GTest::gtest_main)
+
 # Enable testing
 enable_testing()
 include(GoogleTest)
@@ -101,3 +109,4 @@ gtest_discover_tests(nav_tick_tests)
 gtest_discover_tests(display_tests)
 gtest_discover_tests(depth_recovery_tests)
 gtest_discover_tests(button_debounce_tests)
+gtest_discover_tests(trail_map_tests)

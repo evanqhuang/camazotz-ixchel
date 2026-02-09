@@ -87,7 +87,8 @@ private:
     void update_accuracy(uint8_t accuracy);
     void update_elapsed(uint32_t elapsed_ms);
 
-    CalibPhase compute_next_phase(uint8_t accuracy, uint32_t phase_dwell_ms) const;
+    CalibPhase compute_next_phase(uint8_t gyro_acc, uint8_t accel_acc, uint8_t mag_acc,
+                                   uint32_t phase_dwell_ms) const;
 };
 
 #endif /* CALIB_SCREEN_HPP */
