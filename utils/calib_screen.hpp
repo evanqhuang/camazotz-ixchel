@@ -84,7 +84,7 @@ private:
 
     void update_phase_dots(CalibPhase phase);
     void update_instructions(CalibPhase phase);
-    void update_accuracy(uint8_t accuracy);
+    void update_accuracy(uint8_t gyro, uint8_t accel, uint8_t mag);
     void update_elapsed(uint32_t elapsed_ms);
 
     CalibPhase compute_next_phase(uint8_t gyro_acc, uint8_t accel_acc, uint8_t mag_acc,

@@ -110,14 +110,14 @@ void Calib_Screen::create_instruction_box() {
 
 void Calib_Screen::create_accuracy_display() {
     accuracy_label_ = lv_label_create(screen_);
-    lv_label_set_text(accuracy_label_, "ACCURACY: 0/3");
+    lv_label_set_text(accuracy_label_, "ACCURACY: 0%");
     lv_obj_set_style_text_color(accuracy_label_, COLOR_WHITE, LV_PART_MAIN);
     lv_obj_set_style_text_font(accuracy_label_, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_align(accuracy_label_, LV_ALIGN_TOP_MID, 0, 280);
 
     accuracy_bar_ = lv_bar_create(screen_);
     lv_obj_set_size(accuracy_bar_, SCREEN_W - MARGIN * 4, 20);
-    lv_bar_set_range(accuracy_bar_, 0, 3);
+    lv_bar_set_range(accuracy_bar_, 0, 100);
     lv_bar_set_value(accuracy_bar_, 0, LV_ANIM_OFF);
     lv_obj_align(accuracy_bar_, LV_ALIGN_TOP_MID, 0, 310);
 
@@ -238,45 +238,42 @@ void Calib_Screen::update_instructions(CalibPhase phase) {
     lv_label_set_text(instr_detail_, detail);
 }
 
-void Calib_Screen::update_accuracy(uint8_t accuracy) {
+void Calib_Screen::update_accuracy(uint8_t gyro, uint8_t accel, uint8_t mag) {
     if (accuracy_label_ == nullptr || accuracy_bar_ == nullptr) {
-        printf("[CALIB] ERROR: accuracy widgets null\n");
         return;
     }
 
-    /* Skip update if value unchanged (avoid redundant LVGL work) */
-    static uint8_t last_acc = 255;
-    if (accuracy == last_acc) {
+    /* Combined score: 0-9 → 0-100% */
+    uint16_t combined = gyro + accel + mag;  /* 0-9 */
+    uint8_t percent = static_cast<uint8_t>((combined * 100) / 9);  /* 0-100 */
+
+    /* Skip update if unchanged */
+    static uint8_t last_percent = 255;
+    if (percent == last_percent) {
         return;
     }
-    last_acc = accuracy;
-
-    printf("[CALIB] update_accuracy(%u) called\n", accuracy);
+    last_percent = percent;
 
     char buf[24];
-    snprintf(buf, sizeof(buf), "ACCURACY: %u/3", accuracy);
+    snprintf(buf, sizeof(buf), "ACCURACY: %u%%", percent);
     lv_label_set_text(accuracy_label_, buf);
 
-    /* Debug: verify text was actually set */
-    const char *actual = lv_label_get_text(accuracy_label_);
-    printf("[CALIB] Label text now: %s\n", actual);
+    /* Bar now shows 0-100 range */
+    lv_bar_set_value(accuracy_bar_, percent, LV_ANIM_ON);
 
-    lv_bar_set_value(accuracy_bar_, accuracy, LV_ANIM_ON);
-
-    /* Color-code the bar based on accuracy */
+    /* Color thresholds for combined percentage */
     lv_color_t bar_color;
-    if (accuracy == 0) {
+    if (percent < 34) {
         bar_color = COLOR_RED;
-    } else if (accuracy == 1) {
+    } else if (percent < 67) {
         bar_color = COLOR_YELLOW;
-    } else if (accuracy == 2) {
+    } else if (percent < 90) {
         bar_color = LV_COLOR_MAKE(0xFF, 0xA0, 0x00); /* Orange */
     } else {
         bar_color = COLOR_GREEN;
     }
     lv_obj_set_style_bg_color(accuracy_bar_, bar_color, LV_PART_INDICATOR);
 
-    /* Force screen invalidation in case LVGL text comparison optimized away the update */
     lv_obj_invalidate(screen_);
 }
 
@@ -349,9 +346,12 @@ CalibWalkthroughResult Calib_Screen::run(IMU_Wrapper &imu) {
 
     /* Initialize display to current state */
     uint8_t accuracy = imu.get_calibration_accuracy();
+    uint8_t gyro_acc_init = imu.get_gyro_accuracy();
+    uint8_t accel_acc_init = imu.get_accel_accuracy();
+    uint8_t mag_acc_init = imu.get_mag_accuracy();
     update_phase_dots(current_phase_);
     update_instructions(current_phase_);
-    update_accuracy(accuracy);
+    update_accuracy(gyro_acc_init, accel_acc_init, mag_acc_init);
     update_elapsed(0);
     lv_task_handler();
 
@@ -407,7 +407,7 @@ CalibWalkthroughResult Calib_Screen::run(IMU_Wrapper &imu) {
             current_phase_ = CalibPhase::Complete;
             update_phase_dots(current_phase_);
             update_instructions(current_phase_);
-            update_accuracy(3);  // Display as 3/3
+            update_accuracy(gyro_acc, accel_acc, mag_acc);  /* Show 100% */
             update_elapsed(elapsed_ms);
             lv_task_handler();
             sleep_ms(1000);  /* Brief pause to show complete message */
@@ -433,19 +433,10 @@ CalibWalkthroughResult Calib_Screen::run(IMU_Wrapper &imu) {
             phase_start_ms_ = now_ms;
         }
 
-        /* Show phase-appropriate accuracy on UI */
-        uint8_t display_acc;
-        switch (current_phase_) {
-            case CalibPhase::Stationary:    display_acc = gyro_acc;  break;
-            case CalibPhase::Orientation:   display_acc = accel_acc; break;
-            case CalibPhase::Magnetometer:  display_acc = mag_acc;   break;
-            default:                        display_acc = accuracy;  break;
-        }
-
-        /* Update UI */
+        /* Update UI - show combined accuracy percentage */
         update_phase_dots(current_phase_);
         update_instructions(current_phase_);
-        update_accuracy(display_acc);
+        update_accuracy(gyro_acc, accel_acc, mag_acc);
         update_elapsed(elapsed_ms);
 
         /* Process LVGL rendering */
