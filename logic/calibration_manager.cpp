@@ -111,50 +111,18 @@ SensorCalibResult Calibration_Manager::calibrate_encoder() {
 SensorCalibResult Calibration_Manager::calibrate_imu() {
     SensorCalibResult result = {};
 
-    display_.show_status("IMU", "Waiting for calibration accuracy...");
+    display_.show_status("IMU", "Checking sensor...");
 
-    uint32_t start = to_ms_since_boot(get_absolute_time());
-    uint8_t accuracy = 0;
-
-    while (true) {
-        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - start;
-        if (elapsed >= CALIB_IMU_STABILITY_TIMEOUT_MS) {
-            break;
-        }
-
-        accuracy = imu_.get_calibration_accuracy();
-        if (accuracy >= CALIB_IMU_MIN_ACCURACY) {
-            break;
-        }
-
-        uint8_t pct = static_cast<uint8_t>(
-            (elapsed * 100U) / CALIB_IMU_STABILITY_TIMEOUT_MS);
-        display_.show_progress("IMU", pct);
-
-        sleep_ms(100);
-    }
+    // Just verify IMU is responding - walkthrough will handle accuracy wait and tare
+    imu_.flush();
+    uint8_t accuracy = imu_.get_calibration_accuracy();
 
     char buf[80];
-    snprintf(buf, sizeof(buf), "Accuracy: %u/3", static_cast<unsigned>(accuracy));
+    snprintf(buf, sizeof(buf), "Initial accuracy: %u/3", static_cast<unsigned>(accuracy));
     display_.show_status("IMU", buf);
 
-    if (!imu_.tare_now()) {
-        set_error(result, CalibrationStatus::Failed, "Tare operation failed");
-        display_.show_error("IMU", result.error_msg, DisplaySeverity::Fatal);
-        return result;
-    }
-
-    if (accuracy >= CALIB_IMU_MIN_ACCURACY) {
-        display_.show_status("IMU", "Tare applied");
-        result.status = CalibrationStatus::Success;
-    } else {
-        snprintf(result.error_msg, sizeof(result.error_msg),
-                 "Low accuracy (%u/3), tare applied anyway",
-                 static_cast<unsigned>(accuracy));
-        display_.show_error("IMU", result.error_msg, DisplaySeverity::Warning);
-        result.status = CalibrationStatus::Warning;
-    }
-
+    // Don't wait for accuracy, don't tare - walkthrough will do this
+    result.status = CalibrationStatus::Success;
     return result;
 }
 

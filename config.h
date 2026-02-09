@@ -51,9 +51,11 @@
 /*============================================================================
  * Calibration Constants
  *============================================================================*/
-#define CALIB_IMU_STABILITY_TIMEOUT_MS  10000U  /* Max wait for IMU accuracy */
-#define CALIB_IMU_MIN_ACCURACY          2U      /* Minimum acceptable accuracy (0-3) */
+#define CALIB_IMU_STABILITY_TIMEOUT_MS  60000U  /* Max wait for IMU accuracy */
+#define CALIB_IMU_MIN_ACCURACY          3U      /* Minimum acceptable accuracy (0-3) */
 #define CALIB_DEPTH_CRC_MAX_RETRIES     3U      /* PROM CRC retry attempts */
+#define CALIB_WALKTHROUGH_POLL_MS       100U    /* 10Hz polling for walkthrough */
+#define CALIB_PHASE_MIN_DWELL_MS        5000U   /* 5s per phase minimum */
 
 /*============================================================================
  * Encoder Wheel Geometry

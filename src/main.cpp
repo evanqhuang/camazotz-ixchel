@@ -19,6 +19,7 @@
 #include "utils/amoled_display.hpp"
 #include "utils/dual_display.hpp"
 #include "utils/nav_screen.hpp"
+#include "utils/calib_screen.hpp"
 #include "utils/button_debounce.hpp"
 
 #include "pico/stdlib.h"
@@ -179,6 +180,36 @@ int main() {
         stdio_flush();
     }
 
+    /* Initialize tare button (GP6, active-low with pull-up) - BEFORE walkthrough!
+     * Without pull-up configured, the pin floats LOW and causes spurious skip. */
+    gpio_init(TARE_BUTTON_PIN);
+    gpio_set_dir(TARE_BUTTON_PIN, GPIO_IN);
+    gpio_pull_up(TARE_BUTTON_PIN);
+
+    /* Guided IMU calibration walkthrough - runs until 3/3 or user skips */
+    if (imu_ok && display_ok) {
+        display.clear();  // Clear boot log messages before showing walkthrough
+
+        static Calib_Screen calib_screen;
+        calib_screen.create();
+        calib_screen.activate();
+
+        CalibWalkthroughResult result = calib_screen.run(imu);
+
+        if (result.success) {
+            display.show_status("IMU", "Calibration complete - 3/3");
+        } else {
+            /* User skipped */
+            char buf[48];
+            snprintf(buf, sizeof(buf), "Skipped at accuracy %u/3", result.final_accuracy);
+            display.show_status("IMU", buf);
+        }
+
+        /* Apply tare regardless of outcome */
+        imu.tare_now();
+        display.clear();
+    }
+
     // Initialize SD card logger (before Core 1 launch so boot count is stable)
     static SDIO_Logger sd_logger;
     bool sd_ok = sd_logger.init();
@@ -189,14 +220,14 @@ int main() {
     }
     stdio_flush();
 
-    /* Initialize tare button (GP6, active-low with pull-up) */
-    gpio_init(TARE_BUTTON_PIN);
-    gpio_set_dir(TARE_BUTTON_PIN, GPIO_IN);
-    gpio_pull_up(TARE_BUTTON_PIN);
-
     // Enable watchdog — Core 0 and Core 1 both feed it
     watchdog_enable(NAV_WATCHDOG_TIMEOUT_MS, true);
     display.show_status("Sys", "Watchdog enabled");
+
+    // Flush any stale SHTP events before Core 1 takes over
+    if (imu_ok) {
+        imu.flush();
+    }
 
     // Launch Core 1 navigation loop
     static Core1Context nav_ctx = {&encoder, &imu};

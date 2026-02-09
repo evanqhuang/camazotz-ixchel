@@ -31,7 +31,6 @@ __not_in_flash_func(void) core1_entry() {
 
     NavTickState state = {};
     uint16_t prev_enc_failures = 0;
-    uint16_t prev_imu_failures = 0;
 
     while (true) {
         absolute_time_t start = get_absolute_time();
@@ -41,10 +40,9 @@ __not_in_flash_func(void) core1_entry() {
         bool enc_ok = (encoder->consecutive_failures == prev_enc_failures);
         prev_enc_failures = encoder->consecutive_failures;
 
+        bool imu_ok = imu->poll();
         Quat q = imu->get_quaternion();
         Vec3 w = imu->get_angular_velocity();
-        bool imu_ok = (imu->consecutive_failures == prev_imu_failures);
-        prev_imu_failures = imu->consecutive_failures;
 
         SensorSnapshot snap = {enc_delta, enc_ok, q, w, imu_ok};
         nav_state_compact_t compact = {};

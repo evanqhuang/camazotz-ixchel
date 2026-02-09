@@ -144,21 +144,28 @@ void IMU_Wrapper::bus_recovery() {
     sleep_ms(BUS_RECOVERY_SETTLE_MS);
 }
 
-Quat IMU_Wrapper::get_quaternion() {
+bool IMU_Wrapper::poll() {
     if (drain_events()) {
         consecutive_failures = 0;
-    } else {
-        if (consecutive_failures < UINT16_MAX) { consecutive_failures++; }
+        return true;
     }
+    if (consecutive_failures < UINT16_MAX) { consecutive_failures++; }
+    return false;
+}
+
+void IMU_Wrapper::flush() {
+    for (int i = 0; i < MAX_FLUSH_ITERATIONS; i++) {
+        if (!imu_.getSensorEvent()) {
+            break;
+        }
+    }
+}
+
+Quat IMU_Wrapper::get_quaternion() const {
     return cached_quat_;
 }
 
-Vec3 IMU_Wrapper::get_angular_velocity() {
-    if (drain_events()) {
-        consecutive_failures = 0;
-    } else {
-        if (consecutive_failures < UINT16_MAX) { consecutive_failures++; }
-    }
+Vec3 IMU_Wrapper::get_angular_velocity() const {
     return cached_angular_vel_;
 }
 

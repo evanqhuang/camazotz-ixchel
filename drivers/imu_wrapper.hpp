@@ -21,8 +21,10 @@
 class IMU_Wrapper {
 public:
     bool init();
-    Quat get_quaternion();
-    Vec3 get_angular_velocity();
+    bool poll();
+    void flush();
+    Quat get_quaternion() const;
+    Vec3 get_angular_velocity() const;
     void hardware_reset();
 
     uint8_t get_calibration_accuracy();
@@ -36,6 +38,7 @@ private:
     static constexpr uint8_t IMU_ADDR = 0x4B;
     static constexpr uint16_t REPORT_INTERVAL_MS = 10; // 100Hz
     static constexpr int MAX_DRAIN_ITERATIONS = 10;
+    static constexpr int MAX_FLUSH_ITERATIONS = 200;
     static constexpr uint32_t I2C_PROBE_TIMEOUT_US = 100000;
 
     static constexpr int MAX_PROBE_CYCLES = 20;

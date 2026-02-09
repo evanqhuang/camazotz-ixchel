@@ -19,6 +19,7 @@ add_executable(mapper
     ../utils/lvgl_port.cpp
     ../utils/amoled_display.cpp
     ../utils/nav_screen.cpp
+    ../utils/calib_screen.cpp
     ../utils/button_debounce.cpp
 )
 
@@ -47,6 +48,7 @@ set_source_files_properties(
     ../utils/lvgl_port.cpp
     ../utils/amoled_display.cpp
     ../utils/nav_screen.cpp
+    ../utils/calib_screen.cpp
     ../utils/button_debounce.cpp
     PROPERTIES COMPILE_FLAGS "${PROJECT_FLAGS_STR}"
 )
