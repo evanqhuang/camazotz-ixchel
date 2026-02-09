@@ -47,7 +47,6 @@
  * System Timing
  *============================================================================*/
 #define NAV_LOOP_RATE_HZ        100U     /* Core1 navigation tick rate */
-#define LOG_FLUSH_RATE_HZ       10U      /* SD card flush rate */
 
 /*============================================================================
  * Calibration Constants
@@ -66,7 +65,7 @@
  *============================================================================*/
 #define NAV_TICK_PERIOD_MS              10U      /* 100Hz tick rate */
 #define NAV_FIFO_TIMEOUT_US             0U       /* Non-blocking FIFO push */
-#define NAV_WATCHDOG_TIMEOUT_MS         100U     /* 10 missed ticks = reboot */
+#define NAV_WATCHDOG_TIMEOUT_MS         250U     /* 25 missed ticks = reboot (fits IMU reset ~110ms) */
 
 /*============================================================================
  * AMOLED Display - QSPI via PIO0
@@ -83,6 +82,12 @@
 #define DISPLAY_HEIGHT              456U
 #define DISPLAY_X_OFFSET            20U
 #define DISPLAY_DEFAULT_BRIGHTNESS  80U
+
+/*============================================================================
+ * Tare Button
+ *============================================================================*/
+#define TARE_BUTTON_PIN             6U       /* GP6: active-low with pull-up */
+#define TARE_DEBOUNCE_MS            50U      /* Debounce interval (ms) */
 
 /*============================================================================
  * System Clock

@@ -18,6 +18,8 @@ add_executable(mapper
     ../utils/stdio_display.cpp
     ../utils/lvgl_port.cpp
     ../utils/amoled_display.cpp
+    ../utils/nav_screen.cpp
+    ../utils/button_debounce.cpp
 )
 
 # Generate PIO headers from assembly
@@ -44,6 +46,8 @@ set_source_files_properties(
     ../utils/stdio_display.cpp
     ../utils/lvgl_port.cpp
     ../utils/amoled_display.cpp
+    ../utils/nav_screen.cpp
+    ../utils/button_debounce.cpp
     PROPERTIES COMPILE_FLAGS "${PROJECT_FLAGS_STR}"
 )
 

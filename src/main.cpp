@@ -18,14 +18,18 @@
 #include "utils/stdio_display.hpp"
 #include "utils/amoled_display.hpp"
 #include "utils/dual_display.hpp"
+#include "utils/nav_screen.hpp"
+#include "utils/button_debounce.hpp"
 
 #include "pico/stdlib.h"
 #include "pico/stdio_usb.h"
 #include "pico/multicore.h"
 #include "hardware/watchdog.h"
 #include "hardware/clocks.h"
+#include "hardware/gpio.h"
 
 #include <cstdio>
+#include <cmath>
 
 int main() {
     /* Set system clock to 150MHz for QSPI display bandwidth */
@@ -167,6 +171,14 @@ int main() {
         display.show_status("Cal", cal_summary);
     }
 
+    /* Log IMU failure but continue - nav screen will show degraded state */
+    if (cal.imu.status == CalibrationStatus::Failed) {
+        display.show_error("Cal", "IMU failed - running degraded",
+                           DisplaySeverity::Warning);
+        printf("[WARN] IMU calibration failed - continuing with degraded navigation\n");
+        stdio_flush();
+    }
+
     // Initialize SD card logger (before Core 1 launch so boot count is stable)
     static SDIO_Logger sd_logger;
     bool sd_ok = sd_logger.init();
@@ -176,6 +188,11 @@ int main() {
         display.show_error("SD", "Logger init FAILED", DisplaySeverity::Warning);
     }
     stdio_flush();
+
+    /* Initialize tare button (GP6, active-low with pull-up) */
+    gpio_init(TARE_BUTTON_PIN);
+    gpio_set_dir(TARE_BUTTON_PIN, GPIO_IN);
+    gpio_pull_up(TARE_BUTTON_PIN);
 
     // Enable watchdog — Core 0 and Core 1 both feed it
     watchdog_enable(NAV_WATCHDOG_TIMEOUT_MS, true);
@@ -187,7 +204,14 @@ int main() {
     multicore_fifo_push_blocking(reinterpret_cast<uint32_t>(&nav_ctx));
     display.show_status("Sys", "Nav loop launched (100Hz)");
 
-    display.show_status("Sys", "Running");
+    /* Create and activate navigation screen */
+    static Nav_Screen nav_screen;
+    if (display_ok) {
+        nav_screen.create();
+        nav_screen.activate();
+    }
+
+    display.show_status("Sys", "Entering main loop");
     stdio_flush();
 
     // Main loop — Core 0 handles depth sensor, FIFO consumption, display, logging, and heartbeat
@@ -200,6 +224,8 @@ int main() {
     double z_recovered = 0.0;
     uint8_t depth_flags = 0;
     uint8_t prev_status_flags = 0;
+    static DebounceState tare_debounce = {};
+    double total_distance_core0 = 0.0;
 
     while (true) {
         watchdog_update();
@@ -207,12 +233,16 @@ int main() {
         /* Read nav state from Core 1 every iteration for depth recovery */
         nav_state_compact_t nav = core1_get_nav_state();
 
-        /* Extract pitch from quaternion for depth recovery geometric estimation */
+        /* Accumulate total distance (display-only approximation: delta_dist may
+         * include recovery-estimated segments from Core 1, so total is approximate) */
+        total_distance_core0 += static_cast<double>(fabsf(nav.delta_dist));
+
+        /* Extract heading and pitch from quaternion */
         Quat q = {nav.quat_w, nav.quat_x, nav.quat_y, nav.quat_z};
         double R[3][3];
         quaternion_to_rotation_matrix(q, R);
-        double heading_unused, pitch_rad;
-        extract_heading_pitch(R, &heading_unused, &pitch_rad);
+        double heading_rad, pitch_rad;
+        extract_heading_pitch(R, &heading_rad, &pitch_rad);
 
         /* Update depth sensor and run tiered recovery */
         bool depth_updated = false;
@@ -261,7 +291,47 @@ int main() {
                 sd_logger.log_event("IMU_ESTIMATED", combined_flags);
             }
         }
+        /* NAV_CRITICAL edge detection for AMOLED alert */
+        bool prev_critical = (prev_status_flags & NAV_FLAG_NAV_CRITICAL) != 0;
+        bool curr_critical = (combined_flags & NAV_FLAG_NAV_CRITICAL) != 0;
+        if (curr_critical && !prev_critical) {
+            if (display_ok) {
+                nav_screen.show_critical_alert("NAV CRITICAL");
+            }
+            printf("[ALERT] NAV CRITICAL\n");
+        } else if (!curr_critical && prev_critical) {
+            if (display_ok) {
+                nav_screen.hide_critical_alert();
+            }
+            printf("[ALERT] NAV CRITICAL cleared\n");
+        }
         prev_status_flags = combined_flags;
+
+        /* Poll tare button (non-blocking) */
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        bool raw_pressed = !gpio_get(TARE_BUTTON_PIN);
+        if (debounce_check(now, raw_pressed, TARE_DEBOUNCE_MS, tare_debounce)) {
+            bool tare_ok = calibrator.manual_tare();
+            if (display_ok) {
+                nav_screen.show_tare_status(tare_ok, now);
+            }
+            printf("[TARE] %s\n", tare_ok ? "OK" : "FAILED");
+            stdio_flush();
+        }
+
+        /* Update navigation screen (throttled to 5Hz internally) */
+        if (display_ok) {
+            float heading_deg = static_cast<float>(heading_rad * 180.0 / M_PI);
+            if (heading_deg < 0.0f) {
+                heading_deg += 360.0f;
+            }
+            nav_screen.update(heading_deg, static_cast<float>(z_recovered),
+                              nav.pos_x, nav.pos_y,
+                              static_cast<float>(total_distance_core0),
+                              combined_flags,
+                              sd_ok && sd_logger.is_operational(),
+                              now);
+        }
 
         /* Process LVGL rendering events */
         if (display_ok) {
@@ -274,20 +344,9 @@ int main() {
             // Sequence number consumed — latest nav state available
         }
 
-        /* Check for depth sensor NAV_CRITICAL */
-        if (depth_flags & NAV_FLAG_NAV_CRITICAL) {
-            display.show_error("NAV", "DEPTH LOST - NAV CRITICAL",
-                               DisplaySeverity::Fatal);
-        }
-
         if (++loop_count >= HEARTBEAT_INTERVAL) {
             JitterStats jitter = core1_get_jitter_stats();
             uint32_t drops = core1_get_dropped_frames();
-
-            if (nav.status_flags & NAV_FLAG_IMU_LOST) {
-                display.show_error("NAV", "IMU LOST - NAV CRITICAL",
-                                   DisplaySeverity::Fatal);
-            }
 
             /* SD card sync and recovery during heartbeat (every 5s) */
             if (sd_ok) {
@@ -305,13 +364,14 @@ int main() {
             LoggerStats sd_stats = sd_logger.get_stats();
 
             printf("[heartbeat] uptime=%lu ms  pos=(%.4f, %.4f, %.4f)  depth_z=%.4f  "
-                   "flags=0x%02X  jitter=%lu/%lu/%lu us  drops=%lu  "
+                   "dist=%.1f  flags=0x%02X  jitter=%lu/%lu/%lu us  drops=%lu  "
                    "sd=%s rec=%lu/%lu\n",
                    static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())),
                    static_cast<double>(nav.pos_x),
                    static_cast<double>(nav.pos_y),
                    static_cast<double>(nav.pos_z),
                    z_recovered,
+                   total_distance_core0,
                    combined_flags,
                    static_cast<unsigned long>(jitter.min_us),
                    static_cast<unsigned long>(jitter.last_us),

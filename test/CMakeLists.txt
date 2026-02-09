@@ -82,6 +82,14 @@ add_executable(depth_recovery_tests
 target_compile_options(depth_recovery_tests PRIVATE ${TEST_WARNING_FLAGS})
 target_link_libraries(depth_recovery_tests GTest::gtest_main)
 
+# --- button_debounce_tests ---
+add_executable(button_debounce_tests
+  test_button_debounce.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../utils/button_debounce.cpp
+)
+target_compile_options(button_debounce_tests PRIVATE ${TEST_WARNING_FLAGS})
+target_link_libraries(button_debounce_tests GTest::gtest_main)
+
 # Enable testing
 enable_testing()
 include(GoogleTest)
@@ -92,3 +100,4 @@ gtest_discover_tests(types_tests)
 gtest_discover_tests(nav_tick_tests)
 gtest_discover_tests(display_tests)
 gtest_discover_tests(depth_recovery_tests)
+gtest_discover_tests(button_debounce_tests)
