@@ -21,6 +21,7 @@
 #include "utils/dual_display.hpp"
 #include "utils/nav_screen.hpp"
 #include "utils/calib_screen.hpp"
+#include "utils/splash_screen.hpp"
 #include "utils/button_debounce.hpp"
 
 #include "pico/stdlib.h"
@@ -68,6 +69,7 @@ int main() {
 
     if (display_ok) {
         printf("AMOLED display initialized OK\n");
+        show_splash_screen(3000);
     } else {
         printf("AMOLED display init FAILED — falling back to stdio only\n");
     }

@@ -22,8 +22,12 @@ add_executable(mapper
     ../utils/amoled_display.cpp
     ../utils/nav_screen.cpp
     ../utils/calib_screen.cpp
+    ../utils/splash_screen.cpp
     ../utils/button_debounce.cpp
     ../utils/trail_map.cpp
+    ../libs/font_quetzalcoatl_32.c
+    ../libs/font_montserrat_bold_32.c
+    ../libs/logo_img.c
 )
 
 # Generate PIO headers from assembly
@@ -54,9 +58,18 @@ set_source_files_properties(
     ../utils/amoled_display.cpp
     ../utils/nav_screen.cpp
     ../utils/calib_screen.cpp
+    ../utils/splash_screen.cpp
     ../utils/button_debounce.cpp
     ../utils/trail_map.cpp
     PROPERTIES COMPILE_FLAGS "${PROJECT_FLAGS_STR}"
+)
+
+# Generated asset files need LV_LVGL_H_INCLUDE_SIMPLE to find lvgl.h
+set_source_files_properties(
+    ../libs/font_quetzalcoatl_32.c
+    ../libs/font_montserrat_bold_32.c
+    ../libs/logo_img.c
+    PROPERTIES COMPILE_DEFINITIONS "LV_LVGL_H_INCLUDE_SIMPLE"
 )
 
 # Link libraries
