@@ -21,6 +21,7 @@
 #define NAV_FLAG_NAV_CRITICAL       (1U << 4U)  /* Navigation solution degraded/unreliable */
 #define NAV_FLAG_ENCODER_LOST       (1U << 5U)  /* Encoder recovery exhausted, map paused */
 #define NAV_FLAG_IMU_LOST           (1U << 6U)  /* IMU recovery exhausted, orientation frozen */
+#define NAV_FLAG_SENSOR_CONFLICT    (1U << 7U)  /* IMU/encoder cross-validation failure */
 
 /* Action request flags — consumed by core1_nav.cpp after nav_tick_update() */
 #define NAV_ACTION_IMU_RESET        (1U << 0U)  /* Request IMU hardware reset */

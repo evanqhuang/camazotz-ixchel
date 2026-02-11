@@ -206,6 +206,10 @@ Vec3 IMU_Wrapper::get_angular_velocity() const {
     return cached_angular_vel_;
 }
 
+Vec3 IMU_Wrapper::get_linear_acceleration() const {
+    return cached_linear_accel_;
+}
+
 void IMU_Wrapper::hardware_reset() {
     // Toggle RST pin: LOW → wait → HIGH → wait
     gpio_put(IMU_RST_PIN, 0);
@@ -250,6 +254,11 @@ bool IMU_Wrapper::drain_events() {
             last_accel_accuracy_ = event_status;
         } else if (event_id == SH2_MAGNETIC_FIELD_CALIBRATED) {
             last_mag_accuracy_ = event_status;
+        } else if (event_id == SH2_LINEAR_ACCELERATION) {
+            cached_linear_accel_.x = imu_.getLinAccelX();
+            cached_linear_accel_.y = imu_.getLinAccelY();
+            cached_linear_accel_.z = imu_.getLinAccelZ();
+            got_event = true;
         }
     }
 
@@ -286,6 +295,12 @@ bool IMU_Wrapper::enable_reports() {
         printf("[IMU] Warning: failed to enable mag report\n");
     } else {
         printf("[IMU] Calibrated mag enabled at 100 ms\n");
+    }
+
+    if (!imu_.enableLinearAccelerometer(REPORT_INTERVAL_MS)) {
+        printf("[IMU] Warning: failed to enable linear accel report\n");
+    } else {
+        printf("[IMU] Linear acceleration enabled at %u ms\n", REPORT_INTERVAL_MS);
     }
 
     stdio_flush();

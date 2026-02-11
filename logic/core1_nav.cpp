@@ -43,8 +43,9 @@ __not_in_flash_func(void) core1_entry() {
         bool imu_ok = imu->poll();
         Quat q = imu->get_quaternion();
         Vec3 w = imu->get_angular_velocity();
+        Vec3 a = imu->get_linear_acceleration();
 
-        SensorSnapshot snap = {enc_delta, enc_ok, q, w, imu_ok};
+        SensorSnapshot snap = {enc_delta, enc_ok, q, w, a, imu_ok};
         nav_state_compact_t compact = {};
         nav_tick_update(state, snap, &compact);
 

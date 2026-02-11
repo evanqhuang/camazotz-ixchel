@@ -25,6 +25,7 @@ public:
     void flush();
     Quat get_quaternion() const;
     Vec3 get_angular_velocity() const;
+    Vec3 get_linear_acceleration() const;
     void hardware_reset();
 
     uint8_t get_calibration_accuracy();
@@ -54,6 +55,7 @@ private:
     BNO08x imu_;
     Quat cached_quat_ = {1.0f, 0.0f, 0.0f, 0.0f};
     Vec3 cached_angular_vel_ = {0.0f, 0.0f, 0.0f};
+    Vec3 cached_linear_accel_ = {0.0f, 0.0f, 0.0f};
 
     // Per-sensor accuracy tracking (library has bugs, we capture directly)
     uint8_t last_rv_accuracy_ = 0;    // Rotation vector

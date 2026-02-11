@@ -22,6 +22,7 @@ TEST(NavTickUpdate_EncoderRecovery, ValidEncoderProducesCorrectDisplacement) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_state_compact_t out = {};
@@ -45,15 +46,18 @@ TEST(NavTickUpdate_EncoderRecovery, FailedEncoderUsesLastGoodValue) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap1, &out);
 
+    // Encoder fails but IMU shows motion → extrapolate at last velocity
     SensorSnapshot snap2 = {
         .encoder_delta = 9999.0f,
         .encoder_valid = false,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.5f, 0.0f, 0.0f},  // IMU shows forward motion
         .imu_valid = true
     };
     uint8_t flags = nav_tick_update(state, snap2, &out);
@@ -74,6 +78,7 @@ TEST(NavTickUpdate_EncoderRecovery, FailStreakResetsOnSuccess) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap1, &out);
@@ -83,6 +88,7 @@ TEST(NavTickUpdate_EncoderRecovery, FailStreakResetsOnSuccess) {
         .encoder_valid = false,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_fail, &out);
@@ -96,6 +102,7 @@ TEST(NavTickUpdate_EncoderRecovery, FailStreakResetsOnSuccess) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     uint8_t flags = nav_tick_update(state, snap2, &out);
@@ -114,6 +121,7 @@ TEST(NavTickUpdate_EncoderRecovery, FailStreakSaturatesAtUINT16MAX) {
         .encoder_valid = false,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -134,6 +142,7 @@ TEST(NavTickUpdate_EncoderRecovery, CriticalThresholdSetsFlag) {
         .encoder_valid = false,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -153,18 +162,46 @@ static SensorSnapshot make_good_snap(float encoder_delta) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 }
 
-// Helper: Create a failed encoder snapshot
+// Helper: Create a failed encoder snapshot (IMU valid but stationary)
+// Note: With IMU-informed recovery, this will trigger immediate hard stop!
 static SensorSnapshot make_encoder_fail_snap() {
     return {
         .encoder_delta = 0.0f,
         .encoder_valid = false,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
+    };
+}
+
+// Helper: Create a failed encoder snapshot with IMU showing motion
+// Use this to test encoder recovery when device is still moving
+static SensorSnapshot make_encoder_fail_snap_with_motion() {
+    return {
+        .encoder_delta = 0.0f,
+        .encoder_valid = false,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.5f, 0.0f, 0.0f},  // Forward acceleration above threshold
+        .imu_valid = true
+    };
+}
+
+// Helper: Create a failed encoder snapshot with IMU also failed (blind recovery)
+static SensorSnapshot make_encoder_fail_snap_blind() {
+    return {
+        .encoder_delta = 0.0f,
+        .encoder_valid = false,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false  // IMU also failed → use blind recovery
     };
 }
 
@@ -175,9 +212,9 @@ TEST(NavTickUpdate_EncoderTieredRecovery, Tier1_ExtrapolatesAtConstantVelocity) 
     // One good read with encoder_delta=2.0f → velocity = (2.0*0.025)/0.01 = 5.0 m/s
     nav_tick_update(state, make_good_snap(2.0f), &out);
 
-    // Run 9 failures (streak 1-9, all Tier 1) → delta_dist = 5.0 * 0.01 = 0.05 each
-    for (int i = 0; i < 9; ++i) {
-        nav_tick_update(state, make_encoder_fail_snap(), &out);
+    // Run 9 failures with IMU showing motion → delta_dist = 5.0 * 0.01 = 0.05 each
+    for (unsigned i = 0; i < 9; ++i) {
+        nav_tick_update(state, make_encoder_fail_snap_with_motion(), &out);
     }
 
     // After 10 ticks total (1 good + 9 fail), pos_x = 10 * 0.05 = 0.5
@@ -201,19 +238,21 @@ TEST(NavTickUpdate_EncoderTieredRecovery, Tier2_FirstDecayAtBoundary) {
     // Good read with encoder_delta=2.0f → velocity=5.0
     nav_tick_update(state, make_good_snap(2.0f), &out);
 
-    // Run 9 Tier 1 failures
-    for (int i = 0; i < 9; ++i) {
-        nav_tick_update(state, make_encoder_fail_snap(), &out);
+    // Run 9 Tier 1 failures with blind recovery (IMU also failed)
+    // Note: After 5 ticks, IMU throttle (0.5x) kicks in due to imu_fail_streak >= NAV_IMU_TIER1_THRESHOLD
+    for (unsigned i = 0; i < 9; ++i) {
+        nav_tick_update(state, make_encoder_fail_snap_blind(), &out);
     }
 
     // Save pos_x before the 10th failure tick
     double pos_before = state.pos_x;
 
     // 10th failure → Tier 2 entry: velocity becomes 5.0*0.8=4.0, delta_dist=4.0*0.01=0.04
-    nav_tick_update(state, make_encoder_fail_snap(), &out);
+    // But IMU throttle (0.5x) is applied: delta_dist = 0.04 * 0.5 = 0.02
+    nav_tick_update(state, make_encoder_fail_snap_blind(), &out);
 
     double delta_for_tick_10 = state.pos_x - pos_before;
-    EXPECT_NEAR(delta_for_tick_10, 0.04, 1e-6);
+    EXPECT_NEAR(delta_for_tick_10, 0.02, 1e-6);
 }
 
 TEST(NavTickUpdate_EncoderTieredRecovery, Tier2_ProgressiveDecay) {
@@ -223,14 +262,14 @@ TEST(NavTickUpdate_EncoderTieredRecovery, Tier2_ProgressiveDecay) {
     // Good read with encoder_delta=2.0f → velocity=5.0
     nav_tick_update(state, make_good_snap(2.0f), &out);
 
-    // Run 9 Tier 1 failures
-    for (int i = 0; i < 9; ++i) {
-        nav_tick_update(state, make_encoder_fail_snap(), &out);
+    // Run 9 Tier 1 failures with blind recovery (IMU also failed)
+    for (unsigned i = 0; i < 9; ++i) {
+        nav_tick_update(state, make_encoder_fail_snap_blind(), &out);
     }
 
     // Run 3 more failures (Tier 2): velocities should be 5.0*0.8=4.0, 4.0*0.8=3.2, 3.2*0.8=2.56
-    for (int i = 0; i < 3; ++i) {
-        nav_tick_update(state, make_encoder_fail_snap(), &out);
+    for (unsigned i = 0; i < 3; ++i) {
+        nav_tick_update(state, make_encoder_fail_snap_blind(), &out);
     }
 
     EXPECT_FLOAT_NEAR(state.last_velocity, 2.56f);
@@ -243,12 +282,12 @@ TEST(NavTickUpdate_EncoderTieredRecovery, Tier2_EncoderEstimatedFlagSet) {
     // Good read with encoder_delta=2.0f → velocity=5.0
     nav_tick_update(state, make_good_snap(2.0f), &out);
 
-    // Run 10 failures (enters Tier 2)
-    for (int i = 0; i < 10; ++i) {
-        nav_tick_update(state, make_encoder_fail_snap(), &out);
+    // Run 10 failures with blind recovery (IMU also failed) to enter Tier 2
+    for (unsigned i = 0; i < 10; ++i) {
+        nav_tick_update(state, make_encoder_fail_snap_blind(), &out);
     }
 
-    uint8_t flags = nav_tick_update(state, make_encoder_fail_snap(), &out);
+    uint8_t flags = nav_tick_update(state, make_encoder_fail_snap_blind(), &out);
 
     // ENCODER_ESTIMATED is set, ENCODER_LOST is NOT set (velocity still large)
     EXPECT_NE(flags & NAV_FLAG_ENCODER_ESTIMATED, 0);
@@ -352,10 +391,10 @@ TEST(NavTickUpdate_EncoderTieredRecovery, TotalDistance_AccumulatesDuringEstimat
     NavTickState state = {};
     nav_state_compact_t out = {};
 
-    // Good read with encoder_delta=2.0f (delta_dist=0.05), then 3 failures (Tier 1)
+    // Good read with encoder_delta=2.0f (delta_dist=0.05), then 3 failures with IMU motion
     nav_tick_update(state, make_good_snap(2.0f), &out);
-    for (int i = 0; i < 3; ++i) {
-        nav_tick_update(state, make_encoder_fail_snap(), &out);
+    for (unsigned i = 0; i < 3; ++i) {
+        nav_tick_update(state, make_encoder_fail_snap_with_motion(), &out);
     }
 
     // total_distance = 4 * 0.05 = 0.2
@@ -404,14 +443,14 @@ TEST(NavTickUpdate_EncoderTieredRecovery, NegativeVelocity_DecaysTowardZero) {
     // Good read with encoder_delta=-2.0f → velocity = (-2.0*0.025)/0.01 = -5.0
     nav_tick_update(state, make_good_snap(-2.0f), &out);
 
-    // 9 Tier 1 failures: delta_dist = -5.0*0.01 = -0.05 each (moving backward)
-    for (int i = 0; i < 9; ++i) {
-        nav_tick_update(state, make_encoder_fail_snap(), &out);
+    // 9 Tier 1 failures with blind recovery: delta_dist = -5.0*0.01 = -0.05 each (moving backward)
+    for (unsigned i = 0; i < 9; ++i) {
+        nav_tick_update(state, make_encoder_fail_snap_blind(), &out);
     }
 
-    // 3 Tier 2 failures: velocity = -4.0, -3.2, -2.56
-    for (int i = 0; i < 3; ++i) {
-        nav_tick_update(state, make_encoder_fail_snap(), &out);
+    // 3 Tier 2 failures with blind recovery: velocity = -4.0, -3.2, -2.56
+    for (unsigned i = 0; i < 3; ++i) {
+        nav_tick_update(state, make_encoder_fail_snap_blind(), &out);
     }
 
     // Velocity should be negative but magnitude decaying
@@ -432,6 +471,7 @@ TEST(NavTickUpdate_IMURecovery, ValidIMUProducesCorrectRotation) {
         .encoder_valid = true,
         .imu_quaternion = {static_cast<float>(COS45), 0.0f, 0.0f, static_cast<float>(SIN45)},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_state_compact_t out = {};
@@ -455,6 +495,7 @@ TEST(NavTickUpdate_IMURecovery, FailedIMUUsesLastGoodQuaternion) {
         .encoder_valid = true,
         .imu_quaternion = {static_cast<float>(COS45), 0.0f, 0.0f, static_cast<float>(SIN45)},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap1, &out);
@@ -464,6 +505,7 @@ TEST(NavTickUpdate_IMURecovery, FailedIMUUsesLastGoodQuaternion) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     uint8_t flags = nav_tick_update(state, snap2, &out);
@@ -484,6 +526,7 @@ TEST(NavTickUpdate_IMURecovery, IdentityQuaternionDefaultOnFirstFailure) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     uint8_t flags = nav_tick_update(state, snap, &out);
@@ -504,6 +547,7 @@ TEST(NavTickUpdate_IMURecovery, FailStreakResetsOnSuccess) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap1, &out);
@@ -513,6 +557,7 @@ TEST(NavTickUpdate_IMURecovery, FailStreakResetsOnSuccess) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     nav_tick_update(state, snap_fail, &out);
@@ -525,6 +570,7 @@ TEST(NavTickUpdate_IMURecovery, FailStreakResetsOnSuccess) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     uint8_t flags = nav_tick_update(state, snap2, &out);
@@ -543,6 +589,7 @@ TEST(NavTickUpdate_IMURecovery, FailStreakSaturatesAtUINT16MAX) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
 
@@ -563,6 +610,7 @@ TEST(NavTickUpdate_IMURecovery, CriticalThresholdSetsFlag) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
 
@@ -582,6 +630,7 @@ static SensorSnapshot make_imu_fail_snap() {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
 }
@@ -598,6 +647,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier1_ExtrapolatesWithAngularVelocity) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 1.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -627,6 +677,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier1_ChainsExtrapolationAcrossTicks) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 1.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -660,6 +711,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier1_ZeroAngularVelocityHoldsOrientation)
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -684,6 +736,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier1_SetsIMUEstimatedNotLost) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -706,6 +759,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier1_DoesNotThrottleDistance) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -717,6 +771,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier1_DoesNotThrottleDistance) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     nav_tick_update(state, snap_fail, &out);
@@ -736,6 +791,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier1_DoesNotRequestReset) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -761,6 +817,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier2_HoldsOrientationAtBoundary) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 1.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -793,6 +850,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier2_ThrottlesDistanceBy50Percent) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -810,6 +868,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier2_ThrottlesDistanceBy50Percent) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     nav_tick_update(state, snap_tier2, &out);
@@ -830,6 +889,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier2_ThrottleStacksWithEncoderRecovery) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -851,6 +911,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier2_ThrottleStacksWithEncoderRecovery) {
         .encoder_valid = false,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     nav_tick_update(state, snap_both_fail, &out);
@@ -871,6 +932,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier2_SetsIMUEstimatedNotLost) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -897,6 +959,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier2_DoesNotRequestReset) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -922,6 +985,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier3_ZerosDistance) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -939,6 +1003,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier3_ZerosDistance) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     nav_tick_update(state, snap_tier3, &out);
@@ -957,6 +1022,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier3_SetsIMULostAndNavCritical) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -983,6 +1049,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier3_RequestsResetOnce) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -1008,6 +1075,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier3_DoesNotReRequestReset) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -1035,6 +1103,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, Tier3_TotalDistanceFrozen) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -1074,6 +1143,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, RecoveryFromTier1_ResetsStateFully) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good1, &out);
@@ -1091,6 +1161,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, RecoveryFromTier1_ResetsStateFully) {
         .encoder_valid = true,
         .imu_quaternion = {0.9f, 0.1f, 0.2f, 0.3f},
         .imu_angular_velocity = {0.1f, 0.2f, 0.3f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     uint8_t flags = nav_tick_update(state, snap_good2, &out);
@@ -1112,6 +1183,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, RecoveryFromTier2_ClearsThrottleAndFlags) 
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good1, &out);
@@ -1129,6 +1201,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, RecoveryFromTier2_ClearsThrottleAndFlags) 
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     uint8_t flags = nav_tick_update(state, snap_good2, &out);
@@ -1152,6 +1225,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, RecoveryFromTier3_ClearsAllFlagsAndResetRe
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good1, &out);
@@ -1170,6 +1244,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, RecoveryFromTier3_ClearsAllFlagsAndResetRe
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     uint8_t flags = nav_tick_update(state, snap_good2, &out);
@@ -1193,6 +1268,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, NewFailureAfterRecovery_ReRaisesResetReque
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good1, &out);
@@ -1208,6 +1284,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, NewFailureAfterRecovery_ReRaisesResetReque
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good2, &out);
@@ -1252,6 +1329,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, SimultaneousEncoderAndIMUTier3) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -1262,6 +1340,7 @@ TEST(NavTickUpdate_IMUTieredRecovery, SimultaneousEncoderAndIMUTier3) {
         .encoder_valid = false,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     for (int i = 0; i < 50; ++i) {
@@ -1291,6 +1370,7 @@ TEST(NavTickUpdate_Pipeline, ForwardMotionIdentityQuaternion) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1312,6 +1392,7 @@ TEST(NavTickUpdate_Pipeline, NinetyDegreeYawRotationChangesDirection) {
         .encoder_valid = true,
         .imu_quaternion = {static_cast<float>(COS45), 0.0f, 0.0f, static_cast<float>(SIN45)},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1332,6 +1413,7 @@ TEST(NavTickUpdate_Pipeline, ZeroEncoderDeltaNoDisplacement) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1354,6 +1436,7 @@ TEST(NavTickUpdate_Pipeline, DoublePrecisionMaintainedOver10000Ticks) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1383,6 +1466,7 @@ TEST(NavTickUpdate_Pipeline, CompactOutputCorrectlyDowncastsDoubles) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1402,6 +1486,7 @@ TEST(NavTickUpdate_Pipeline, QuaternionPassthroughToOutput) {
         .encoder_valid = true,
         .imu_quaternion = {0.8f, 0.1f, 0.2f, 0.3f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1426,6 +1511,7 @@ TEST(NavTickUpdate_StatusFlags, NoFailuresZeroFlags) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1444,6 +1530,7 @@ TEST(NavTickUpdate_StatusFlags, EncoderOnlyFailureEncoderEstimated) {
         .encoder_valid = false,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1462,6 +1549,7 @@ TEST(NavTickUpdate_StatusFlags, IMUOnlyFailureIMUEstimated) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
 
@@ -1480,6 +1568,7 @@ TEST(NavTickUpdate_StatusFlags, BothSensorsFailedBothFlagsSet) {
         .encoder_valid = false,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
 
@@ -1499,6 +1588,7 @@ TEST(NavTickUpdate_StatusFlags, CriticalThresholdAddsNavCriticalFlag) {
         .encoder_valid = false,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1517,6 +1607,7 @@ TEST(NavTickUpdate_StatusFlags, FlagsClearWhenSensorsRecover) {
         .encoder_valid = false,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     nav_tick_update(state, snap_fail, &out);
@@ -1528,6 +1619,7 @@ TEST(NavTickUpdate_StatusFlags, FlagsClearWhenSensorsRecover) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     uint8_t flags = nav_tick_update(state, snap_good, &out);
@@ -1549,6 +1641,7 @@ TEST(NavTickUpdate_TickCount, IncrementsEachCall) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1573,6 +1666,7 @@ TEST(NavTickUpdate_TickCount, CorrectAfterManyIterations) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1592,6 +1686,7 @@ TEST(NavTickUpdate_TickCount, IncrementsEvenWithFailedSensors) {
         .encoder_valid = false,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
 
@@ -1615,6 +1710,7 @@ TEST(NavTickUpdate_EdgeCases, NegativeEncoderDeltaMovesBackward) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1635,6 +1731,7 @@ TEST(NavTickUpdate_EdgeCases, MultipleRotationsAccumulate) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap1, &out);
@@ -1644,6 +1741,7 @@ TEST(NavTickUpdate_EdgeCases, MultipleRotationsAccumulate) {
         .encoder_valid = true,
         .imu_quaternion = {static_cast<float>(COS45), 0.0f, 0.0f, static_cast<float>(SIN45)},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap2, &out);
@@ -1667,6 +1765,7 @@ TEST(NavTickUpdate_EdgeCases, LargePositionValues) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
 
@@ -1692,6 +1791,7 @@ TEST(NavTickUpdate_DeltaDistOutput, DeltaDistOutputIsPreThrottle) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -1710,6 +1810,7 @@ TEST(NavTickUpdate_DeltaDistOutput, DeltaDistPreservedDuringIMUTier2Throttle) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -1726,6 +1827,7 @@ TEST(NavTickUpdate_DeltaDistOutput, DeltaDistPreservedDuringIMUTier2Throttle) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     nav_tick_update(state, snap_enc, &out);
@@ -1744,6 +1846,7 @@ TEST(NavTickUpdate_DeltaDistOutput, DeltaDistPreservedDuringIMUTier3Zero) {
         .encoder_valid = true,
         .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.5f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = true
     };
     nav_tick_update(state, snap_good, &out);
@@ -1760,10 +1863,475 @@ TEST(NavTickUpdate_DeltaDistOutput, DeltaDistPreservedDuringIMUTier3Zero) {
         .encoder_valid = true,
         .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
         .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
         .imu_valid = false
     };
     nav_tick_update(state, snap_enc, &out);
 
     // Output delta_dist should be pre-throttle: 4.0 * 0.025 = 0.1
     EXPECT_FLOAT_NEAR(out.delta_dist, 4.0f * ENCODER_WHEEL_RADIUS_M);
+}
+
+// ============================================================================
+// Test Suite: NavTickUpdate_ConflictDetection_CaseA (Wheel Slip)
+// ============================================================================
+
+// Helper: Create a snapshot with wheel slip scenario (encoder moving, IMU stationary)
+static SensorSnapshot make_wheel_slip_snap(float encoder_delta) {
+    return {
+        .encoder_delta = encoder_delta,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+}
+
+// Helper: Create a snapshot with normal motion (encoder moving, IMU shows motion)
+static SensorSnapshot make_normal_motion_snap(float encoder_delta, float accel_x) {
+    return {
+        .encoder_delta = encoder_delta,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {accel_x, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseA, NoConflictWhenBothStationary) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Both encoder and IMU stationary - no conflict
+    SensorSnapshot snap = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+
+    for (int i = 0; i < 20; ++i) {
+        nav_tick_update(state, snap, &out);
+    }
+
+    EXPECT_EQ(state.conflict_streak, 0);
+    EXPECT_EQ(out.status_flags & NAV_FLAG_SENSOR_CONFLICT, 0);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseA, NoConflictOnForwardMotion) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Normal forward motion: encoder moving, IMU shows forward acceleration
+    for (int i = 0; i < 20; ++i) {
+        nav_tick_update(state, make_normal_motion_snap(1.0f, 0.5f), &out);
+    }
+
+    EXPECT_EQ(state.conflict_streak, 0);
+    EXPECT_EQ(out.status_flags & NAV_FLAG_SENSOR_CONFLICT, 0);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseA, NoConflictWhenRotating) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Rotating in place: encoder stationary, IMU shows rotation
+    SensorSnapshot snap = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.1f},  // Above threshold
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+
+    for (int i = 0; i < 20; ++i) {
+        nav_tick_update(state, snap, &out);
+    }
+
+    EXPECT_EQ(state.conflict_streak, 0);
+    EXPECT_EQ(out.status_flags & NAV_FLAG_SENSOR_CONFLICT, 0);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseA, NoConflictWhenTurning) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Turning: encoder moving, IMU shows rotation
+    SensorSnapshot snap = {
+        .encoder_delta = 1.0f,  // Above threshold
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.1f},  // Above threshold
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+
+    for (int i = 0; i < 20; ++i) {
+        nav_tick_update(state, snap, &out);
+    }
+
+    EXPECT_EQ(state.conflict_streak, 0);
+    EXPECT_EQ(out.status_flags & NAV_FLAG_SENSOR_CONFLICT, 0);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseA, ConflictDetectedOnWheelSlip) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Wheel slip: encoder moving, IMU completely stationary
+    // Need CONFLICT_WINDOW_TICKS (5) to complete one window, then streak increments
+    // After CONFLICT_TIER1_THRESHOLD (10) windows, flag is set
+    for (unsigned i = 0; i < CONFLICT_WINDOW_TICKS * (CONFLICT_TIER1_THRESHOLD + 1); ++i) {
+        nav_tick_update(state, make_wheel_slip_snap(0.5f), &out);
+    }
+
+    EXPECT_GE(state.conflict_streak, CONFLICT_TIER1_THRESHOLD);
+    EXPECT_NE(out.status_flags & NAV_FLAG_SENSOR_CONFLICT, 0);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseA, TieredAttenuation_Tier2) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Build up to Tier 2 threshold
+    for (unsigned i = 0; i < CONFLICT_WINDOW_TICKS * (CONFLICT_TIER2_THRESHOLD + 1); ++i) {
+        nav_tick_update(state, make_wheel_slip_snap(1.0f), &out);
+    }
+
+    // Position should advance at 50% rate due to attenuation
+    // Note: the exact calculation depends on how many ticks applied attenuation
+    EXPECT_GE(state.conflict_streak, CONFLICT_TIER2_THRESHOLD);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseA, TieredAttenuation_Tier3) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Build up to Tier 3 threshold
+    for (unsigned i = 0; i < CONFLICT_WINDOW_TICKS * (CONFLICT_TIER3_THRESHOLD + 1); ++i) {
+        nav_tick_update(state, make_wheel_slip_snap(1.0f), &out);
+    }
+
+    double pos_before = state.pos_x;
+
+    // One more window of wheel slip - distance should be zeroed
+    for (unsigned i = 0; i < CONFLICT_WINDOW_TICKS; ++i) {
+        nav_tick_update(state, make_wheel_slip_snap(2.0f), &out);
+    }
+
+    // Position should not advance at Tier 3
+    EXPECT_DOUBLE_NEAR(state.pos_x, pos_before);
+    EXPECT_GE(state.conflict_streak, CONFLICT_TIER3_THRESHOLD);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseA, ConflictStreakResetsOnNormalMotion) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Build up some conflict streak
+    for (unsigned i = 0; i < CONFLICT_WINDOW_TICKS * 5; ++i) {
+        nav_tick_update(state, make_wheel_slip_snap(0.5f), &out);
+    }
+
+    EXPECT_GT(state.conflict_streak, 0);
+
+    // Normal motion should reset streak (IMU shows acceleration)
+    for (unsigned i = 0; i < CONFLICT_WINDOW_TICKS * 2; ++i) {
+        nav_tick_update(state, make_normal_motion_snap(0.5f, 0.5f), &out);
+    }
+
+    EXPECT_EQ(state.conflict_streak, 0);
+    EXPECT_EQ(out.status_flags & NAV_FLAG_SENSOR_CONFLICT, 0);
+}
+
+// ============================================================================
+// Test Suite: NavTickUpdate_ConflictDetection_CaseB (IMU-Informed Encoder Recovery)
+// ============================================================================
+
+// Helper: Create encoder fail snapshot with IMU showing motion
+static SensorSnapshot make_encoder_fail_imu_motion_snap() {
+    return {
+        .encoder_delta = 0.0f,
+        .encoder_valid = false,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.1f},  // Above threshold
+        .imu_linear_accel = {0.5f, 0.0f, 0.0f},  // Forward motion
+        .imu_valid = true
+    };
+}
+
+// Helper: Create encoder fail snapshot with IMU showing stationary
+static SensorSnapshot make_encoder_fail_imu_stationary_snap() {
+    return {
+        .encoder_delta = 0.0f,
+        .encoder_valid = false,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+}
+
+// Helper: Create encoder fail snapshot with IMU showing deceleration
+static SensorSnapshot make_encoder_fail_imu_decel_snap() {
+    return {
+        .encoder_delta = 0.0f,
+        .encoder_valid = false,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {-0.5f, 0.0f, 0.0f},  // Deceleration
+        .imu_valid = true
+    };
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseB, IMUMotion_ContinuesExtrapolation) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Establish velocity with good encoder read
+    nav_tick_update(state, make_good_snap(2.0f), &out);
+    float expected_velocity = 2.0f * ENCODER_WHEEL_RADIUS_M / 0.01f;  // 5.0 m/s
+    EXPECT_FLOAT_NEAR(state.last_velocity, expected_velocity);
+
+    double pos_before = state.pos_x;
+
+    // Encoder fails but IMU shows motion -> continue extrapolation
+    nav_tick_update(state, make_encoder_fail_imu_motion_snap(), &out);
+
+    // Position should advance at last velocity
+    double expected_delta = expected_velocity * 0.01;  // dt = 10ms
+    EXPECT_NEAR(state.pos_x - pos_before, expected_delta, 1e-6);
+    EXPECT_FLOAT_NEAR(state.last_velocity, expected_velocity);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseB, IMUStationary_ImmediateStop) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Establish velocity with good encoder read
+    nav_tick_update(state, make_good_snap(2.0f), &out);
+    EXPECT_FLOAT_NEAR(state.last_velocity, 5.0f);
+
+    double pos_before = state.pos_x;
+
+    // Encoder fails, IMU shows device stopped -> immediate hard stop
+    nav_tick_update(state, make_encoder_fail_imu_stationary_snap(), &out);
+
+    // Position should not advance, velocity zeroed
+    EXPECT_DOUBLE_NEAR(state.pos_x, pos_before);
+    EXPECT_FLOAT_NEAR(state.last_velocity, 0.0f);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseB, IMUDeceleration_FasterDecay) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Establish velocity with good encoder read
+    nav_tick_update(state, make_good_snap(2.0f), &out);
+    float initial_velocity = state.last_velocity;
+    EXPECT_FLOAT_NEAR(initial_velocity, 5.0f);
+
+    // Encoder fails, IMU shows deceleration -> 60% decay per tick
+    nav_tick_update(state, make_encoder_fail_imu_decel_snap(), &out);
+
+    // Velocity should decay at 60% factor
+    EXPECT_FLOAT_NEAR(state.last_velocity, initial_velocity * CONFLICT_ACCEL_DECAY_FACTOR);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseB, BlindRecovery_WhenIMUAlsoFails) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Establish velocity with good encoder read
+    nav_tick_update(state, make_good_snap(2.0f), &out);
+    EXPECT_FLOAT_NEAR(state.last_velocity, 5.0f);
+
+    // Both sensors fail -> should fall back to original tiered recovery
+    SensorSnapshot snap_both_fail = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = false,
+        .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false
+    };
+
+    double pos_before = state.pos_x;
+    nav_tick_update(state, snap_both_fail, &out);
+
+    // Should use Tier 1 extrapolation (streak < 10)
+    EXPECT_NEAR(state.pos_x - pos_before, 5.0 * 0.01, 1e-6);
+}
+
+// ============================================================================
+// Test Suite: NavTickUpdate_ConflictDetection_CaseC (Stuck Wheel)
+// ============================================================================
+
+// Helper: Create stuck wheel scenario (encoder zero, IMU shows motion)
+static SensorSnapshot make_stuck_wheel_snap() {
+    return {
+        .encoder_delta = 0.0f,  // Wheel not turning
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.1f},  // Device rotating
+        .imu_linear_accel = {0.5f, 0.0f, 0.0f},  // Forward motion
+        .imu_valid = true
+    };
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseC, StuckWheelDetected) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Establish velocity first
+    nav_tick_update(state, make_good_snap(2.0f), &out);
+    EXPECT_FLOAT_NEAR(state.last_velocity, 5.0f);
+
+    // Run stuck wheel scenario for CONFLICT_ZERO_ENCODER_TICKS
+    for (unsigned i = 0; i < CONFLICT_ZERO_ENCODER_TICKS; ++i) {
+        nav_tick_update(state, make_stuck_wheel_snap(), &out);
+    }
+
+    // Stuck wheel should be detected, using IMU-informed recovery
+    EXPECT_GE(state.encoder_zero_imu_motion_streak, CONFLICT_ZERO_ENCODER_TICKS);
+    EXPECT_NE(out.status_flags & NAV_FLAG_SENSOR_CONFLICT, 0);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseC, StuckWheelUsesLastVelocity) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Establish velocity first
+    nav_tick_update(state, make_good_snap(2.0f), &out);
+    double pos_before = state.pos_x;
+
+    // Run stuck wheel scenario - should use last velocity for extrapolation
+    for (unsigned i = 0; i < CONFLICT_ZERO_ENCODER_TICKS; ++i) {
+        nav_tick_update(state, make_stuck_wheel_snap(), &out);
+    }
+
+    // Position should have advanced using last velocity
+    double delta = state.pos_x - pos_before;
+    EXPECT_GT(delta, 0.0);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseC, FalsePositivePrevention_IMUAlsoStationary) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Both encoder and IMU stationary - valid stop, not stuck wheel
+    SensorSnapshot snap = {
+        .encoder_delta = 0.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+
+    for (int i = 0; i < 20; ++i) {
+        nav_tick_update(state, snap, &out);
+    }
+
+    // No stuck wheel detection since IMU also shows stationary
+    EXPECT_EQ(state.encoder_zero_imu_motion_streak, 0);
+    EXPECT_EQ(out.status_flags & NAV_FLAG_SENSOR_CONFLICT, 0);
+}
+
+TEST(NavTickUpdate_ConflictDetection_CaseC, RecoveryWhenEncoderResumes) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Build up stuck wheel detection
+    nav_tick_update(state, make_good_snap(2.0f), &out);
+    for (unsigned i = 0; i < CONFLICT_ZERO_ENCODER_TICKS; ++i) {
+        nav_tick_update(state, make_stuck_wheel_snap(), &out);
+    }
+
+    EXPECT_GE(state.encoder_zero_imu_motion_streak, CONFLICT_ZERO_ENCODER_TICKS);
+
+    // Encoder resumes working - streak should reset
+    nav_tick_update(state, make_good_snap(1.0f), &out);
+
+    EXPECT_EQ(state.encoder_zero_imu_motion_streak, 0);
+    EXPECT_EQ(state.encoder_fail_streak, 0);
+}
+
+// ============================================================================
+// Test Suite: NavTickUpdate_ConflictDetection_Integration
+// ============================================================================
+
+TEST(NavTickUpdate_ConflictDetection_Integration, ConflictAttenuationStacksWithIMUThrottle) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Build up conflict streak to Tier 2
+    for (unsigned i = 0; i < CONFLICT_WINDOW_TICKS * (CONFLICT_TIER2_THRESHOLD + 1); ++i) {
+        nav_tick_update(state, make_wheel_slip_snap(1.0f), &out);
+    }
+
+    // Also enter IMU Tier 2
+    for (int i = 0; i < 6; ++i) {
+        nav_tick_update(state, make_imu_fail_snap(), &out);
+    }
+
+    double pos_before = state.pos_x;
+
+    // Both attenuations should stack
+    SensorSnapshot snap = {
+        .encoder_delta = 4.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {0.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
+        .imu_valid = false
+    };
+    nav_tick_update(state, snap, &out);
+
+    // Position delta should be reduced by both conflict (50%) and IMU (50%) attenuation
+    double delta = state.pos_x - pos_before;
+    double expected = 4.0f * ENCODER_WHEEL_RADIUS_M * CONFLICT_DIST_ATTENUATION * NAV_IMU_DIST_THROTTLE;
+    EXPECT_NEAR(delta, expected, 1e-5);
+}
+
+TEST(NavTickUpdate_ConflictDetection_Integration, DeltaDistPhysicalPreserved) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Build up conflict streak to Tier 2 (attenuation applied)
+    for (unsigned i = 0; i < CONFLICT_WINDOW_TICKS * (CONFLICT_TIER2_THRESHOLD + 1); ++i) {
+        nav_tick_update(state, make_wheel_slip_snap(1.0f), &out);
+    }
+
+    // delta_dist output should still be pre-attenuation value
+    nav_tick_update(state, make_wheel_slip_snap(2.0f), &out);
+
+    // delta_dist_physical should be the encoder reading * wheel radius
+    EXPECT_FLOAT_NEAR(out.delta_dist, 2.0f * ENCODER_WHEEL_RADIUS_M);
+}
+
+TEST(NavTickUpdate_ConflictDetection_Integration, WindowResetOnSensorFailure) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+
+    // Start accumulating in window
+    for (unsigned i = 0; i < CONFLICT_WINDOW_TICKS - 1; ++i) {
+        nav_tick_update(state, make_wheel_slip_snap(1.0f), &out);
+    }
+
+    // Window accumulators should have values
+    EXPECT_GT(state.accumulated_encoder_delta, 0.0f);
+
+    // Sensor failure should reset window (can't cross-validate)
+    nav_tick_update(state, make_imu_fail_snap(), &out);
+
+    EXPECT_FLOAT_NEAR(state.accumulated_encoder_delta, 0.0f);
+    EXPECT_FLOAT_NEAR(state.accumulated_omega_magnitude, 0.0f);
+    EXPECT_FLOAT_NEAR(state.accumulated_accel_magnitude, 0.0f);
+    EXPECT_EQ(state.conflict_window_count, 0);
 }

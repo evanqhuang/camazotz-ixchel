@@ -123,6 +123,22 @@
 #define NAV_IMU_DIST_THROTTLE           0.5f    /* IMU Tier 2 distance scaling factor */
 
 /*============================================================================
+ * Sensor Conflict Detection (IMU-Encoder Cross-Validation)
+ *============================================================================*/
+#define CONFLICT_ENCODER_MOTION_THRESHOLD   0.01f   /* rad - min encoder delta to be "moving" */
+#define CONFLICT_ENCODER_ZERO_THRESHOLD     0.001f  /* rad - below this = encoder "zero" */
+#define CONFLICT_IMU_OMEGA_THRESHOLD        0.05f   /* rad/s - min angular velocity to be "rotating" */
+#define CONFLICT_IMU_ACCEL_THRESHOLD        0.3f    /* m/s² - min linear accel to be "moving" */
+#define CONFLICT_DECEL_THRESHOLD            0.2f    /* m/s² - min deceleration to trigger faster decay */
+#define CONFLICT_WINDOW_TICKS               5U      /* Ticks to accumulate before Case A evaluation */
+#define CONFLICT_ZERO_ENCODER_TICKS         10U     /* Ticks of zero encoder before Case C triggers */
+#define CONFLICT_TIER1_THRESHOLD            10U     /* Flag only, no attenuation */
+#define CONFLICT_TIER2_THRESHOLD            30U     /* 50% distance attenuation */
+#define CONFLICT_TIER3_THRESHOLD            100U    /* Zero distance (severe) */
+#define CONFLICT_DIST_ATTENUATION           0.5f    /* Tier 2 distance factor */
+#define CONFLICT_ACCEL_DECAY_FACTOR         0.6f    /* Faster decay when deceleration detected */
+
+/*============================================================================
  * Error Recovery - Depth Sensor
  *============================================================================*/
 #define DEPTH_FAIL_GRACE_TICKS          10U     /* 100ms grace before Tier 1 */

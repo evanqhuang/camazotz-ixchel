@@ -20,6 +20,7 @@ struct SensorSnapshot {
     bool encoder_valid;        /* false if I2C read failed */
     Quat imu_quaternion;       /* From IMU_Wrapper::get_quaternion() */
     Vec3 imu_angular_velocity; /* From IMU_Wrapper::get_angular_velocity() */
+    Vec3 imu_linear_accel;     /* Gravity-compensated acceleration [m/s²] */
     bool imu_valid;            /* false if drain_events() failed */
 };
 
@@ -42,6 +43,16 @@ struct NavTickState {
     double total_distance = 0.0;   // cumulative path length (meters)
     uint8_t action_flags = 0;      // consumed by core1_nav.cpp (NAV_ACTION_*)
     bool imu_reset_requested = false; // prevents re-requesting reset each tick
+
+    // Conflict detection state (Case A: wheel slip)
+    uint16_t conflict_streak = 0;
+    float accumulated_encoder_delta = 0.0f;
+    float accumulated_omega_magnitude = 0.0f;
+    float accumulated_accel_magnitude = 0.0f;
+    uint8_t conflict_window_count = 0;
+
+    // Stuck wheel detection state (Case C)
+    uint16_t encoder_zero_imu_motion_streak = 0;
 };
 
 /*============================================================================
