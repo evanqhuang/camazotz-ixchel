@@ -20,8 +20,8 @@
 #define IMU_I2C_NUM             1U       /* I2C instance 1: use i2c_get_inst() */
 #define IMU_SDA_PIN             2U
 #define IMU_SCL_PIN             3U
-#define IMU_RST_PIN             4U       /* Active low, hardware reset recovery */
-#define IMU_INT_PIN             5U       /* HINTN: sensor asserts LOW when ready */
+#define IMU_RST_PIN             5U       /* Active low, hardware reset recovery */
+#define IMU_INT_PIN             4U       /* HINTN: sensor asserts LOW when ready */
 #define IMU_I2C_FREQ_HZ         100000U  /* 100kHz — clock stretching unreliable at 400kHz */
 
 /*============================================================================

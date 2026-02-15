@@ -22,7 +22,18 @@ bool Encoder_Wrapper::init() {
         return false;
     }
 
-    // 3. Set I2C0 interrupt priority to 0 (highest) in NVIC
+    // 3. Probe device presence — fail fast if encoder not connected.
+    //    as5600_init() only configures GPIOs; it never touches the I2C bus.
+    //    Without this check, init reports success for a missing device.
+    uint8_t reg = 0x0B;  // STATUS register
+    int probe = i2c_write_timeout_us(encoder_.i2c_inst, AS5600_ADDR,
+                                      &reg, 1, false, I2C_TIMEOUT_US);
+    if (probe < 0) {
+        printf("[ENC] No device at 0x%02X\n", AS5600_ADDR);
+        return false;
+    }
+
+    // 4. Set I2C0 interrupt priority to 0 (highest) in NVIC
     //    Ensures encoder bus transactions are never preempted by other
     //    peripherals. Critical for maintaining 100Hz navigation loop timing.
     irq_set_priority(I2C0_IRQ, 0);

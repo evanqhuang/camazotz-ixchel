@@ -420,8 +420,17 @@ int main() {
             flush_count = 0;
         }
 
-        /* Log critical status flag transitions */
+        /* Merge runtime flags with init-time sensor failures.
+         * Core 1 flags reflect runtime degradation; init failures are
+         * only known to Core 0 and must be injected here so the nav
+         * screen never shows "OK" for a sensor that failed init. */
         uint8_t combined_flags = nav.status_flags | depth_flags;
+        if (!enc_ok) {
+            combined_flags |= NAV_FLAG_ENCODER_LOST;
+        }
+        if (!imu_ok) {
+            combined_flags |= NAV_FLAG_IMU_LOST;
+        }
         uint8_t new_flags = combined_flags & ~prev_status_flags;
         if (sd_ok && new_flags != 0) {
             if (new_flags & NAV_FLAG_ENCODER_LOST) {
