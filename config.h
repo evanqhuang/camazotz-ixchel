@@ -92,6 +92,13 @@
 #define TARE_DEBOUNCE_MS            50U      /* Debounce interval (ms) */
 
 /*============================================================================
+ * Power Button (Long-Press Power Off)
+ *============================================================================*/
+#define POWER_FEEDBACK_MS       1500U    /* Show "Hold to power off..." */
+#define POWER_LONG_PRESS_MS     3000U    /* Trigger shutdown sequence */
+#define POWER_OFF_MAGIC         0xCAFED00DU  /* Scratch register sentinel */
+
+/*============================================================================
  * System Clock
  *============================================================================*/
 #define SYS_CLOCK_KHZ               150000U

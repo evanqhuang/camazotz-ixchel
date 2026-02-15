@@ -106,6 +106,14 @@ add_executable(battery_math_tests
 target_compile_options(battery_math_tests PRIVATE ${TEST_WARNING_FLAGS})
 target_link_libraries(battery_math_tests GTest::gtest_main)
 
+# --- power_button_tests ---
+add_executable(power_button_tests
+  test_power_button.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../utils/power_button.cpp
+)
+target_compile_options(power_button_tests PRIVATE ${TEST_WARNING_FLAGS})
+target_link_libraries(power_button_tests GTest::gtest_main)
+
 # Enable testing
 enable_testing()
 include(GoogleTest)
@@ -119,3 +127,4 @@ gtest_discover_tests(depth_recovery_tests)
 gtest_discover_tests(button_debounce_tests)
 gtest_discover_tests(trail_map_tests)
 gtest_discover_tests(battery_math_tests)
+gtest_discover_tests(power_button_tests)

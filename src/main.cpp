@@ -30,11 +30,114 @@
 #include "hardware/watchdog.h"
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
+#include "utils/power_button.hpp"
+#include "hardware/xosc.h"
+#include "hardware/pll.h"
+#include "hardware/structs/watchdog.h"
 
 #include <cstdio>
 #include <cmath>
 
+[[noreturn]]
+static void perform_shutdown(bool display_ok, bool sd_ok,
+                              AMOLED_Display &amoled,
+                              SDIO_Logger &sd_logger,
+                              Nav_Screen &nav_screen) {
+    printf("[SHUTDOWN] Initiating power-off sequence...\n");
+    stdio_flush();
+
+    /* Show shutdown message */
+    if (display_ok) {
+        nav_screen.show_critical_alert("Powering Off...");
+        amoled.task_handler();
+    }
+
+    /* Log shutdown event */
+    if (sd_ok && sd_logger.is_operational()) {
+        sd_logger.log_event("SHUTDOWN", 0);
+    }
+
+    /* Flush and close SD card */
+    sd_logger.deinit();
+    printf("[SHUTDOWN] SD card unmounted\n");
+
+    /* Stop Core 1 navigation loop */
+    multicore_reset_core1();
+    sleep_ms(10);
+    printf("[SHUTDOWN] Core1 stopped\n");
+
+    /* Disable watchdog */
+    watchdog_disable();
+
+    /* Turn off display */
+    if (display_ok) {
+        amoled.set_brightness(0);
+    }
+
+    /* Brief pause for visual feedback */
+    sleep_ms(200);
+
+    /* Set magic and reboot into dormant entry */
+    printf("[SHUTDOWN] Entering dormant mode\n");
+    stdio_flush();
+    watchdog_hw->scratch[0] = POWER_OFF_MAGIC;
+    watchdog_reboot(0, 0, 10);
+
+    while (true) {
+        tight_loop_contents();
+    }
+}
+
 int main() {
+    /* ── Dormant wake check ──────────────────────────────────────────
+     * If the power-off magic is set in scratch[0], the user triggered
+     * shutdown. Enter dormant immediately before any peripheral init.
+     * On GPIO wake, reboot into normal boot path.
+     */
+    if (watchdog_hw->scratch[0] == POWER_OFF_MAGIC) {
+        watchdog_hw->scratch[0] = 0U;
+
+        /* Configure wake button */
+        gpio_init(TARE_BUTTON_PIN);
+        gpio_set_dir(TARE_BUTTON_PIN, GPIO_IN);
+        gpio_pull_up(TARE_BUTTON_PIN);
+
+        /* Wait for button release (user may still hold from shutdown) */
+        while (!gpio_get(TARE_BUTTON_PIN)) {
+            tight_loop_contents();
+        }
+        /* Brief debounce after release */
+        busy_wait_us_32(50000U);
+
+        /* Hold peripherals in reset during dormant */
+        gpio_init(DISPLAY_RST_PIN);
+        gpio_set_dir(DISPLAY_RST_PIN, GPIO_OUT);
+        gpio_put(DISPLAY_RST_PIN, false);
+
+        gpio_init(IMU_RST_PIN);
+        gpio_set_dir(IMU_RST_PIN, GPIO_OUT);
+        gpio_put(IMU_RST_PIN, false);
+
+        /* Switch clk_sys to clk_ref (XOSC 12MHz) and disable PLLs */
+        clock_configure_undivided(clk_sys,
+            CLOCKS_CLK_SYS_CTRL_SRC_VALUE_CLK_REF,
+            0,
+            XOSC_HZ);
+        pll_deinit(pll_sys);
+        pll_deinit(pll_usb);
+
+        /* Enter dormant until button press (falling edge) */
+        gpio_set_dormant_irq_enabled(TARE_BUTTON_PIN, GPIO_IRQ_EDGE_FALL, true);
+        xosc_dormant();
+
+        /* Woke up — clean reboot */
+        gpio_acknowledge_irq(TARE_BUTTON_PIN, GPIO_IRQ_EDGE_FALL);
+        watchdog_enable(1, true);
+        while (true) {
+            tight_loop_contents();
+        }
+    }
+
     /* Set system clock to 150MHz for QSPI display bandwidth */
     set_sys_clock_khz(SYS_CLOCK_KHZ, true);
     clock_configure(
@@ -265,6 +368,7 @@ int main() {
     uint8_t depth_flags = 0;
     uint8_t prev_status_flags = 0;
     static DebounceState tare_debounce = {};
+    static PowerButtonState power_btn_state = {};
     double total_distance_core0 = 0.0;
     bool prev_low_battery = false;
 
@@ -369,15 +473,42 @@ int main() {
         }
         prev_low_battery = curr_low_battery;
 
-        /* Poll tare button (non-blocking) */
+        /* Poll tare/power button (non-blocking) */
         bool raw_pressed = !gpio_get(TARE_BUTTON_PIN);
-        if (debounce_check(now, raw_pressed, TARE_DEBOUNCE_MS, tare_debounce)) {
-            bool tare_ok = calibrator.manual_tare();
-            if (display_ok) {
-                nav_screen.show_tare_status(tare_ok, now);
+        debounce_check(now, raw_pressed, TARE_DEBOUNCE_MS, tare_debounce);
+
+        ButtonAction btn_action = power_button_update(now,
+            tare_debounce.stable_state,
+            POWER_FEEDBACK_MS, POWER_LONG_PRESS_MS,
+            power_btn_state);
+
+        switch (btn_action) {
+            case ButtonAction::Tare: {
+                bool tare_ok = calibrator.manual_tare();
+                if (display_ok) {
+                    nav_screen.show_tare_status(tare_ok, now);
+                }
+                printf("[TARE] %s\n", tare_ok ? "OK" : "FAILED");
+                stdio_flush();
+                break;
             }
-            printf("[TARE] %s\n", tare_ok ? "OK" : "FAILED");
-            stdio_flush();
+            case ButtonAction::ShowFeedback:
+                if (display_ok) {
+                    nav_screen.show_critical_alert("Hold to power off...");
+                }
+                printf("[POWER] Hold to power off...\n");
+                stdio_flush();
+                break;
+            case ButtonAction::HideFeedback:
+                if (display_ok) {
+                    nav_screen.hide_critical_alert();
+                }
+                break;
+            case ButtonAction::Shutdown:
+                perform_shutdown(display_ok, sd_ok, amoled, sd_logger, nav_screen);
+                break;
+            case ButtonAction::None:
+                break;
         }
 
         /* Update navigation screen (throttled to 5Hz internally) */

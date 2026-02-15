@@ -24,6 +24,7 @@ add_executable(mapper
     ../utils/calib_screen.cpp
     ../utils/splash_screen.cpp
     ../utils/button_debounce.cpp
+    ../utils/power_button.cpp
     ../utils/trail_map.cpp
     ../libs/font_quetzalcoatl_32.c
     ../libs/font_montserrat_bold_32.c
@@ -60,6 +61,7 @@ set_source_files_properties(
     ../utils/calib_screen.cpp
     ../utils/splash_screen.cpp
     ../utils/button_debounce.cpp
+    ../utils/power_button.cpp
     ../utils/trail_map.cpp
     PROPERTIES COMPILE_FLAGS "${PROJECT_FLAGS_STR}"
 )
@@ -85,6 +87,8 @@ target_link_libraries(mapper
     hardware_watchdog
     hardware_dma
     hardware_adc
+    hardware_xosc
+    hardware_pll
     BNO08x_Pico_Library
     dwm_pico_as5600
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico
