@@ -1,0 +1,22 @@
+name: Deploy Dive Visualizer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'visualizer/web/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: pages deploy visualizer/web --project-name=camazotz-map

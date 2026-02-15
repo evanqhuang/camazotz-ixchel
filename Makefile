@@ -1,6 +1,10 @@
 # Makefile — camazotz-ixchel RP2350 firmware
 # Wraps CMake/Ninja build system with convenient targets
 
+# ── Load .env (CLOUDFLARE_API_TOKEN for deploy/infra targets) ────
+-include .env
+export CLOUDFLARE_API_TOKEN
+
 # ── Tool paths (override via env, e.g. CMAKE=/usr/bin/cmake make build)
 PICO_SDK      ?= $(HOME)/.pico-sdk
 CMAKE         ?= $(PICO_SDK)/cmake/v3.31.5/bin/cmake
@@ -11,9 +15,6 @@ OPENOCD       ?= $(PICO_SDK)/openocd/0.12.0+dev/openocd
 TOOLCHAIN     ?= $(PICO_SDK)/toolchain/14_2_Rel1/bin
 GDB           ?= $(TOOLCHAIN)/arm-none-eabi-gdb
 SIZE          := $(TOOLCHAIN)/arm-none-eabi-size
-OBJDUMP       := $(TOOLCHAIN)/arm-none-eabi-objdump
-NM            := $(TOOLCHAIN)/arm-none-eabi-nm
-READELF       := $(TOOLCHAIN)/arm-none-eabi-readelf
 BAUD          ?= 115200
 
 # ── Serial monitor script (exported for use in recipes) ──────────
@@ -38,13 +39,7 @@ BUILD_DIR     := build
 TEST_BUILD_DIR := build-test
 FW_ELF        := $(BUILD_DIR)/src/mapper.elf
 FW_UF2        := $(BUILD_DIR)/src/mapper.uf2
-FW_BIN        := $(BUILD_DIR)/src/mapper.bin
-FW_MAP        := $(BUILD_DIR)/src/mapper.elf.map
 NPROC         := $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
-
-# ── Source globs (for format/lint targets) ──────────────────────────
-SOURCES       := $(shell find src drivers logic utils -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.c' 2>/dev/null)
-SOURCES       += config.h types.h
 
 # ── Colors ──────────────────────────────────────────────────────────
 BOLD := \033[1m
@@ -54,8 +49,9 @@ CYAN := \033[36m
 RESET := \033[0m
 
 .PHONY: all build configure clean rebuild flash flash-swd reboot bootsel \
-        test test-verbose test-clean serial info size symbols sections stack \
-        format format-check lint help monitor debug erase run
+        test test-verbose test-clean serial info size help debug erase run \
+        viz-serve viz-deploy viz-3d viz-3d-demo \
+        tf-init tf-plan tf-apply tf-destroy tf-fmt tf-validate
 
 .DEFAULT_GOAL := help
 
@@ -83,10 +79,6 @@ rebuild: clean build ## Clean then build
 clean: ## Remove build artifacts
 	@printf "$(YELLOW)Cleaning build directories...$(RESET)\n"
 	@rm -rf $(BUILD_DIR) $(TEST_BUILD_DIR)
-
-clean-obj: ## Remove object files only (keep CMake cache for faster rebuilds)
-	@printf "$(YELLOW)Cleaning object files...$(RESET)\n"
-	@cd $(BUILD_DIR) && $(NINJA) -t clean 2>/dev/null || true
 
 # ═══════════════════════════════════════════════════════════════════
 # Flash & Device
@@ -167,8 +159,6 @@ serial: ## Open serial monitor (override port: SERIAL=/dev/ttyACM0, baud: BAUD=1
 	printf "$(CYAN)Connecting to $$PORT @ $(BAUD) baud (Ctrl-C to exit)...$(RESET)\n"; \
 	python3 -c "$$SERIAL_PY" "$$PORT" $(BAUD)
 
-monitor: serial ## Alias for 'serial'
-
 # ═══════════════════════════════════════════════════════════════════
 # Testing
 # ═══════════════════════════════════════════════════════════════════
@@ -201,89 +191,46 @@ size: build ## Show firmware size breakdown (text/data/bss)
 	@printf "\n$(BOLD)UF2: $(RESET)"
 	@ls -lh $(FW_UF2) | awk '{print $$5}'
 
-symbols: build ## List largest symbols (top 30 by size)
-	@printf "$(BOLD)Top 30 symbols by size:$(RESET)\n"
-	@$(NM) --print-size --size-sort --reverse-sort $(FW_ELF) | head -30
-
-sections: build ## Show ELF section sizes
-	@printf "$(BOLD)ELF Sections:$(RESET)\n"
-	@$(SIZE) -A $(FW_ELF) | head -40
-
-stack: ## Show stack usage (.su files from -fstack-usage)
-	@printf "$(BOLD)Top 20 stack consumers:$(RESET)\n"
-	@find $(BUILD_DIR) -name '*.su' -exec cat {} + 2>/dev/null | \
-		sort -t$$'\t' -k2 -rn | head -20 || \
-		printf "$(YELLOW)No .su files found. Build first.$(RESET)\n"
-
-map: build ## Show memory map summary (RAM/Flash usage)
-	@printf "$(BOLD)Memory regions from linker map:$(RESET)\n"
-	@grep -A1 'Memory Configuration' $(FW_MAP) 2>/dev/null | head -10
-	@printf "\n$(BOLD)Largest input sections:$(RESET)\n"
-	@grep '\.text\.' $(FW_MAP) 2>/dev/null | awk '{print $$1, $$2}' | sort -k2 -rn | head -15
-
 # ═══════════════════════════════════════════════════════════════════
-# Code Quality
+# Visualizer
 # ═══════════════════════════════════════════════════════════════════
 
-format: ## Format all source files with clang-format
-	@command -v clang-format >/dev/null 2>&1 || \
-		{ printf "$(YELLOW)clang-format not found. Install: brew install clang-format$(RESET)\n"; exit 1; }
-	@printf "$(CYAN)Formatting $(words $(SOURCES)) files...$(RESET)\n"
-	@clang-format -i $(SOURCES)
-	@printf "$(GREEN)Done.$(RESET)\n"
+INFRA_DIR := visualizer/infra
 
-format-check: ## Check formatting without modifying files
-	@command -v clang-format >/dev/null 2>&1 || \
-		{ printf "$(YELLOW)clang-format not found. Install: brew install clang-format$(RESET)\n"; exit 1; }
-	@printf "$(CYAN)Checking format...$(RESET)\n"
-	@clang-format --dry-run --Werror $(SOURCES) && \
-		printf "$(GREEN)All files formatted correctly.$(RESET)\n" || \
-		{ printf "$(YELLOW)Run 'make format' to fix.$(RESET)\n"; exit 1; }
+viz-serve: ## Serve web visualizer locally (http://localhost:8080)
+	python3 -m http.server 8080 -d visualizer/web
 
-lint: build ## Run clang-tidy on project sources (requires compile_commands.json)
-	@command -v clang-tidy >/dev/null 2>&1 || \
-		{ printf "$(YELLOW)clang-tidy not found. Install: brew install llvm$(RESET)\n"; exit 1; }
-	@printf "$(CYAN)Running clang-tidy...$(RESET)\n"
-	@clang-tidy -p $(BUILD_DIR) $(filter %.cpp,$(SOURCES)) 2>/dev/null || true
+viz-deploy: ## Deploy web visualizer to Cloudflare Pages
+	npx wrangler pages deploy visualizer/web --project-name=camazotz-map
+
+viz-3d: ## Launch PyVista 3D visualizer (usage: make viz-3d CSV=path/to/nav.csv)
+	cd visualizer/pyvista && python3 viz.py $(CSV)
+
+viz-3d-demo: ## Launch PyVista 3D visualizer with demo data
+	cd visualizer/pyvista && python3 viz.py ../testdata/complex_cave_nav.csv \
+		--events ../testdata/complex_cave_events.csv
 
 # ═══════════════════════════════════════════════════════════════════
-# Utilities
+# Infrastructure
 # ═══════════════════════════════════════════════════════════════════
 
-compile-commands: configure ## Generate compile_commands.json for IDE
-	@printf "$(GREEN)compile_commands.json generated at $(BUILD_DIR)/compile_commands.json$(RESET)\n"
-	@printf "Symlink for IDE: "
-	@ln -sf $(BUILD_DIR)/compile_commands.json compile_commands.json 2>/dev/null && \
-		printf "$(GREEN)OK$(RESET)\n" || printf "$(YELLOW)already exists$(RESET)\n"
+tf-init: ## Initialize Terraform
+	terraform -chdir=$(INFRA_DIR) init
 
-deps: ## Show fetched dependency versions
-	@printf "$(BOLD)FetchContent Dependencies:$(RESET)\n"
-	@printf "  BNO08x (IMU):    "; cd $(BUILD_DIR)/_deps/bno08x-src 2>/dev/null && git log --oneline -1 || printf "not fetched\n"
-	@printf "  AS5600 (Encoder): "; cd $(BUILD_DIR)/_deps/as5600-src 2>/dev/null && git log --oneline -1 || printf "not fetched\n"
-	@printf "  FatFS (SD):       "; cd $(BUILD_DIR)/_deps/fatfs-src 2>/dev/null && git log --oneline -1 || printf "not fetched\n"
-	@printf "  GoogleTest:       "; cd $(BUILD_DIR)/_deps/googletest-src 2>/dev/null && git log --oneline -1 || printf "not fetched\n"
+tf-plan: ## Preview infrastructure changes
+	terraform -chdir=$(INFRA_DIR) plan
 
-sdk-version: ## Show Pico SDK and toolchain versions
-	@printf "$(BOLD)Pico SDK:$(RESET)    "; cat $(PICO_SDK)/sdk/2.2.0/pico_sdk_version.cmake 2>/dev/null | grep 'PICO_SDK_VERSION_STRING' | sed 's/.*"\(.*\)".*/\1/' || echo "unknown"
-	@printf "$(BOLD)Toolchain:$(RESET)   "; $(TOOLCHAIN)/arm-none-eabi-gcc --version | head -1
-	@printf "$(BOLD)CMake:$(RESET)       "; $(CMAKE) --version | head -1
-	@printf "$(BOLD)Picotool:$(RESET)    "; $(PICOTOOL) version 2>/dev/null || echo "unknown"
-	@printf "$(BOLD)OpenOCD:$(RESET)     "; $(OPENOCD) --version 2>&1 | head -1
+tf-apply: ## Apply infrastructure changes
+	terraform -chdir=$(INFRA_DIR) apply
 
-# ═══════════════════════════════════════════════════════════════════
-# Git
-# ═══════════════════════════════════════════════════════════════════
+tf-destroy: ## Destroy infrastructure
+	terraform -chdir=$(INFRA_DIR) destroy
 
-diff: ## Show uncommitted changes
-	@git diff --stat
-	@printf "\n"
-	@git diff
+tf-fmt: ## Format Terraform files
+	terraform fmt $(INFRA_DIR)
 
-status: ## Show git status
-	@git status -sb
-
-log: ## Show recent git log
-	@git log --oneline --graph -20
+tf-validate: ## Validate Terraform configuration
+	terraform -chdir=$(INFRA_DIR) validate
 
 # ═══════════════════════════════════════════════════════════════════
 # Help

@@ -56,3 +56,22 @@ test/build/
 
 # Claude Code hooks (per-user, ephemeral)
 .claude/hooks/
+
+# Visualizer Python virtual environments
+visualizer/pyvista/.venv/
+visualizer/testdata/.venv/
+
+# Visualizer Terraform
+visualizer/infra/.terraform/
+visualizer/infra/*.tfstate*
+visualizer/infra/terraform.tfvars
+
+# Environment variables
+.env
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Screenshots / design artifacts
+web-viewer-initial.png
