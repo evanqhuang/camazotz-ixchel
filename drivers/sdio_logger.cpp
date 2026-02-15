@@ -16,6 +16,25 @@ extern "C" {
 #include <cstdio>
 #include <cstring>
 
+/* Directory names for log file organization */
+static constexpr const char* NAV_DIR   = "nav";
+static constexpr const char* EVENT_DIR = "events";
+
+/* Create log directories if they do not already exist. */
+static bool ensure_directories() {
+    FRESULT fr = f_mkdir(NAV_DIR);
+    if (fr != FR_OK && fr != FR_EXIST) {
+        printf("[SD] Failed to create %s/: %s (%d)\n", NAV_DIR, FRESULT_str(fr), fr);
+        return false;
+    }
+    fr = f_mkdir(EVENT_DIR);
+    if (fr != FR_OK && fr != FR_EXIST) {
+        printf("[SD] Failed to create %s/: %s (%d)\n", EVENT_DIR, FRESULT_str(fr), fr);
+        return false;
+    }
+    return true;
+}
+
 /*============================================================================
  * Lifecycle
  *============================================================================*/
@@ -98,12 +117,12 @@ uint32_t SDIO_Logger::find_next_index() {
     uint32_t max_idx = 0;
     bool found = false;
 
-    /* Scan for ???_nav.csv files to find highest existing index */
-    FRESULT fr = f_findfirst(&dir, &fno, "", "???_nav.csv");
+    /* Scan nav/ directory for ???.csv files to find highest existing index */
+    FRESULT fr = f_findfirst(&dir, &fno, NAV_DIR, "???.csv");
     while (fr == FR_OK && fno.fname[0] != '\0') {
-        /* Parse index from "XXX_nav.csv" */
+        /* Parse index from "XXX.csv" */
         unsigned long idx = 0;
-        if (sscanf(fno.fname, "%lu_nav.csv", &idx) == 1) {
+        if (sscanf(fno.fname, "%lu.csv", &idx) == 1) {
             if (!found || static_cast<uint32_t>(idx) > max_idx) {
                 max_idx = static_cast<uint32_t>(idx);
                 found = true;
@@ -123,8 +142,13 @@ bool SDIO_Logger::create_files() {
     static FIL event_fil;
     char filename[32];
 
+    /* Ensure log directories exist */
+    if (!ensure_directories()) {
+        return false;
+    }
+
     /* Create navigation log file */
-    snprintf(filename, sizeof(filename), "%03lu_nav.csv",
+    snprintf(filename, sizeof(filename), "%s/%03lu.csv", NAV_DIR,
              static_cast<unsigned long>(boot_count_));
 
     FRESULT fr = f_open(&nav_fil, filename, FA_CREATE_ALWAYS | FA_WRITE);
@@ -140,7 +164,7 @@ bool SDIO_Logger::create_files() {
     printf("[SD] Created %s\n", filename);
 
     /* Create events log file */
-    snprintf(filename, sizeof(filename), "%03lu_events.csv",
+    snprintf(filename, sizeof(filename), "%s/%03lu.csv", EVENT_DIR,
              static_cast<unsigned long>(boot_count_));
 
     fr = f_open(&event_fil, filename, FA_CREATE_ALWAYS | FA_WRITE);
@@ -419,12 +443,20 @@ bool SDIO_Logger::try_recovery() {
         return false;
     }
 
+    /* Ensure directories exist after remount */
+    if (!ensure_directories()) {
+        printf("[SD] Recovery directory creation failed\n");
+        f_unmount("");
+        fatfs_ = nullptr;
+        return false;
+    }
+
     /* Reopen files in append mode (continue existing log) */
     static FIL nav_fil;
     static FIL event_fil;
     char filename[32];
 
-    snprintf(filename, sizeof(filename), "%03lu_nav.csv",
+    snprintf(filename, sizeof(filename), "%s/%03lu.csv", NAV_DIR,
              static_cast<unsigned long>(boot_count_));
     FRESULT fr = f_open(&nav_fil, filename, FA_OPEN_APPEND | FA_WRITE);
     if (fr != FR_OK) {
@@ -435,7 +467,7 @@ bool SDIO_Logger::try_recovery() {
     }
     nav_file_ = &nav_fil;
 
-    snprintf(filename, sizeof(filename), "%03lu_events.csv",
+    snprintf(filename, sizeof(filename), "%s/%03lu.csv", EVENT_DIR,
              static_cast<unsigned long>(boot_count_));
     fr = f_open(&event_fil, filename, FA_OPEN_APPEND | FA_WRITE);
     if (fr != FR_OK) {
