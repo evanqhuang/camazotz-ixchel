@@ -1,6 +1,6 @@
 /*
  * SDIO Logger - SD Card Logging for Navigation Data
- * Ring-buffered CSV logger for nav_state_compact_t records
+ * Ring-buffered logger for nav_state_compact_t records
  */
 
 #ifndef SDIO_LOGGER_HPP
@@ -149,8 +149,8 @@ private:
     uint32_t event_cache_idx_ = 0;
 
     /* File handles (opaque pointers to avoid FatFS header pollution) */
-    void* nav_file_ = nullptr;      /* FIL* for nav_bootXXX.csv */
-    void* event_file_ = nullptr;    /* FIL* for events_bootXXX.csv */
+    void* nav_file_ = nullptr;      /* FIL* for nav/XXX.nav */
+    void* event_file_ = nullptr;    /* FIL* for events/XXX.event */
     void* fatfs_ = nullptr;         /* FATFS* for mounted filesystem */
 
     /* State */

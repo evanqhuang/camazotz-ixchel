@@ -230,7 +230,7 @@ def generate_full_cave_dive(output_dir: Path, rng: np.random.Generator):
     events.sort(key=lambda e: e.timestamp_ms)
 
     # Write navigation CSV using vectorized approach
-    nav_path = output_dir / 'cave_dive_nav.csv'
+    nav_path = output_dir / 'cave_dive_nav.nav'
     with open(nav_path, 'w') as f:
         # Header
         f.write('timestamp_ms,seq,angular_delta,qw,qx,qy,qz,px,py,pz,delta_dist,flags\n')
@@ -248,7 +248,7 @@ def generate_full_cave_dive(output_dir: Path, rng: np.random.Generator):
                    f'{noisy_positions[i,2]:.4f},{distances[i]:.6f},0x{flags[i]:02X}\n')
 
     # Write events CSV
-    events_path = output_dir / 'cave_dive_events.csv'
+    events_path = output_dir / 'cave_dive_events.event'
     write_events_csv(events, events_path)
 
     # Print summary

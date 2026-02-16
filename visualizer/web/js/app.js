@@ -97,14 +97,14 @@ function loadVisualization(csvText) {
     });
 
   } catch (error) {
-    console.error('Error parsing CSV:', error);
-    alert(`Error parsing CSV file: ${error.message}`);
+    console.error('Error parsing nav file:', error);
+    alert(`Error parsing .nav file: ${error.message}`);
   }
 }
 
 function handleFile(file) {
-  if (!file || !file.name.endsWith('.csv')) {
-    alert('Please select a valid CSV file');
+  if (!file || !file.name.endsWith('.nav')) {
+    alert('Please select a valid .nav file');
     return;
   }
 

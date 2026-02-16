@@ -1,6 +1,6 @@
 /*
  * SDIO Logger Implementation
- * Ring-buffered CSV logging for navigation data to SD card
+ * Ring-buffered logging for navigation data to SD card
  */
 
 #include "drivers/sdio_logger.hpp"
@@ -117,12 +117,12 @@ uint32_t SDIO_Logger::find_next_index() {
     uint32_t max_idx = 0;
     bool found = false;
 
-    /* Scan nav/ directory for ???.csv files to find highest existing index */
-    FRESULT fr = f_findfirst(&dir, &fno, NAV_DIR, "???.csv");
+    /* Scan nav/ directory for ???.nav files to find highest existing index */
+    FRESULT fr = f_findfirst(&dir, &fno, NAV_DIR, "???.nav");
     while (fr == FR_OK && fno.fname[0] != '\0') {
-        /* Parse index from "XXX.csv" */
+        /* Parse index from "XXX.nav" */
         unsigned long idx = 0;
-        if (sscanf(fno.fname, "%lu.csv", &idx) == 1) {
+        if (sscanf(fno.fname, "%lu.nav", &idx) == 1) {
             if (!found || static_cast<uint32_t>(idx) > max_idx) {
                 max_idx = static_cast<uint32_t>(idx);
                 found = true;
@@ -148,7 +148,7 @@ bool SDIO_Logger::create_files() {
     }
 
     /* Create navigation log file */
-    snprintf(filename, sizeof(filename), "%s/%03lu.csv", NAV_DIR,
+    snprintf(filename, sizeof(filename), "%s/%03lu.nav", NAV_DIR,
              static_cast<unsigned long>(boot_count_));
 
     FRESULT fr = f_open(&nav_fil, filename, FA_CREATE_ALWAYS | FA_WRITE);
@@ -164,7 +164,7 @@ bool SDIO_Logger::create_files() {
     printf("[SD] Created %s\n", filename);
 
     /* Create events log file */
-    snprintf(filename, sizeof(filename), "%s/%03lu.csv", EVENT_DIR,
+    snprintf(filename, sizeof(filename), "%s/%03lu.event", EVENT_DIR,
              static_cast<unsigned long>(boot_count_));
 
     fr = f_open(&event_fil, filename, FA_CREATE_ALWAYS | FA_WRITE);
@@ -456,7 +456,7 @@ bool SDIO_Logger::try_recovery() {
     static FIL event_fil;
     char filename[32];
 
-    snprintf(filename, sizeof(filename), "%s/%03lu.csv", NAV_DIR,
+    snprintf(filename, sizeof(filename), "%s/%03lu.nav", NAV_DIR,
              static_cast<unsigned long>(boot_count_));
     FRESULT fr = f_open(&nav_fil, filename, FA_OPEN_APPEND | FA_WRITE);
     if (fr != FR_OK) {
@@ -467,7 +467,7 @@ bool SDIO_Logger::try_recovery() {
     }
     nav_file_ = &nav_fil;
 
-    snprintf(filename, sizeof(filename), "%s/%03lu.csv", EVENT_DIR,
+    snprintf(filename, sizeof(filename), "%s/%03lu.event", EVENT_DIR,
              static_cast<unsigned long>(boot_count_));
     fr = f_open(&event_fil, filename, FA_OPEN_APPEND | FA_WRITE);
     if (fr != FR_OK) {
