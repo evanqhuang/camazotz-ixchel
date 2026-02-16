@@ -104,6 +104,28 @@ body {
   transform: translateY(0);
 }
 
+.sample-divider {
+  margin-top: 1.25rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+}
+
+.sample-link {
+  color: var(--accent-color);
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 500;
+  border-bottom: 1px dashed var(--accent-color);
+  padding-bottom: 2px;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.sample-link:hover {
+  color: #0052a3;
+  border-bottom-color: #0052a3;
+}
+
 .panel {
   position: fixed;
   background: var(--panel-bg);
@@ -112,11 +134,7 @@ body {
   border-radius: 0.5rem;
   padding: 1rem;
   transition: opacity 0.3s ease;
-}
-
-.panel.hidden {
-  opacity: 0;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 #stats-panel {
@@ -178,9 +196,19 @@ body {
   border-bottom-color: #0052a3;
 }
 
-#controls-panel {
+.left-sidebar {
+  position: fixed;
   top: 1rem;
   left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  z-index: 10;
+  pointer-events: none;
+}
+
+#controls-panel {
+  position: static;
   min-width: 200px;
 }
 
@@ -207,39 +235,34 @@ body {
   border-color: var(--accent-color);
 }
 
-#environment-panel {
-  top: 5rem;
-  left: 1rem;
-  min-width: 200px;
-}
-
-#environment-panel h3 {
-  font-size: 1.1rem;
-  margin-bottom: 0.5rem;
-  color: var(--accent-color);
-  font-weight: 400;
-  border-bottom: 1px solid var(--panel-border);
-  padding-bottom: 0.4rem;
-}
-
-.toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0;
-}
-
-.toggle-row input[type="checkbox"] {
-  accent-color: var(--accent-color);
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-}
-
-.toggle-row label {
+.export-button {
+  display: block;
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: var(--accent-color);
+  color: #ffffff;
+  border: none;
+  border-radius: 0.25rem;
   font-size: 0.95rem;
-  color: var(--text-dim);
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.export-button:hover {
+  background: #0052a3;
+  transform: translateY(-1px);
+}
+
+.export-button:active {
+  transform: translateY(0);
+}
+
+.export-button:disabled {
+  background: #999999;
+  cursor: not-allowed;
+  transform: none;
 }
 
 #timeline-panel {

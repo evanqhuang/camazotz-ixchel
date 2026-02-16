@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { flagColor } from './flag-decoder.js';
+import { getDepthColor } from './depth-colormap.js';
 
 export class SceneBuilder {
   constructor(canvas) {
@@ -30,6 +31,27 @@ export class SceneBuilder {
     this.controls.enablePan = true;
     this.controls.enableZoom = true;
 
+    this._onDocPointerMove = (e) => {
+      if (e.target !== canvas) {
+        canvas.dispatchEvent(new PointerEvent('pointermove', {
+          pointerId: e.pointerId, pointerType: e.pointerType,
+          clientX: e.clientX, clientY: e.clientY,
+          button: e.button, buttons: e.buttons
+        }));
+      }
+    };
+    this._onDocPointerUp = (e) => {
+      if (e.target !== canvas) {
+        canvas.dispatchEvent(new PointerEvent('pointerup', {
+          pointerId: e.pointerId, pointerType: e.pointerType,
+          clientX: e.clientX, clientY: e.clientY,
+          button: e.button, buttons: e.buttons
+        }));
+      }
+    };
+    document.addEventListener('pointermove', this._onDocPointerMove);
+    document.addEventListener('pointerup', this._onDocPointerUp);
+
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambientLight);
 
@@ -41,7 +63,6 @@ export class SceneBuilder {
     this.scene.add(axesHelper);
 
     this.tubeMesh = null;
-    this.lineMesh = null;
     this.marker = null;
     this.parsedData = null;
     this.tubeParams = null;
@@ -63,19 +84,13 @@ export class SceneBuilder {
     this.renderer.setSize(width, height);
   }
 
-  buildPath(parsedData, colorMode = 'depth') {
+  buildPath(parsedData, colorMode = 'depth', stats = null) {
     this.parsedData = parsedData;
 
     if (this.tubeMesh) {
       this.scene.remove(this.tubeMesh);
       this.tubeMesh.geometry.dispose();
       this.tubeMesh.material.dispose();
-    }
-
-    if (this.lineMesh) {
-      this.scene.remove(this.lineMesh);
-      this.lineMesh.geometry.dispose();
-      this.lineMesh.material.dispose();
     }
 
     const { positions, count } = parsedData;
@@ -111,56 +126,42 @@ export class SceneBuilder {
     if (downsampledPoints.length > 1) {
       const curve = new THREE.CatmullRomCurve3(downsampledPoints);
       this.curve = curve;
-      const tubeGeometry = new THREE.TubeGeometry(curve, tubularSegments, 0.25, radialSegments, false);
+      const tubeGeometry = new THREE.TubeGeometry(curve, tubularSegments, 1.5, radialSegments, false);
 
-      this.applyVertexColors(tubeGeometry, parsedData, colorMode);
+      this.applyVertexColors(tubeGeometry, parsedData, colorMode, stats);
 
-      const tubeMaterial = new THREE.MeshStandardMaterial({
-        vertexColors: true,
-        roughness: 0.4,
-        metalness: 0.2
+      const tubeMaterial = new THREE.MeshBasicMaterial({
+        vertexColors: true
       });
 
       this.tubeMesh = new THREE.Mesh(tubeGeometry, tubeMaterial);
       this.scene.add(this.tubeMesh);
     }
 
-    const LINE_TARGET_POINTS = 10000;
-    const lineDownsample = Math.max(1, Math.floor(count / LINE_TARGET_POINTS));
-    const lineCount = Math.ceil(count / lineDownsample);
-    const linePositions = new Float32Array(lineCount * 3);
-    for (let i = 0, li = 0; i < count && li < lineCount; i += lineDownsample, li++) {
-      linePositions[li * 3 + 0] = vizPositions[i * 3 + 0];
-      linePositions[li * 3 + 1] = vizPositions[i * 3 + 1];
-      linePositions[li * 3 + 2] = vizPositions[i * 3 + 2];
-    }
-
-    const lineGeometry = new THREE.BufferGeometry();
-    lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
-
-    const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0x0066cc,
-      transparent: true,
-      opacity: 0.7,
-      linewidth: 1
-    });
-
-    this.lineMesh = new THREE.Line(lineGeometry, lineMaterial);
-    this.scene.add(this.lineMesh);
 
     this.fitCameraToPath(vizPositions, count);
   }
 
-  applyVertexColors(tubeGeometry, parsedData, colorMode) {
+  applyVertexColors(tubeGeometry, parsedData, colorMode, stats = null) {
     const { positions, deltaDistances, flags, count } = parsedData;
     const posAttr = tubeGeometry.getAttribute('position');
     const vertexCount = posAttr.count;
 
-    // Precompute depth/speed ranges from source data
-    let maxDepth = 0;
-    for (let i = 0; i < count; i++) {
-      maxDepth = Math.max(maxDepth, Math.abs(positions[i * 3 + 2]));
+    // Compute depth percentiles for color normalization
+    let depthP5, depthP95;
+    if (stats) {
+      depthP5 = stats.depthP5;
+      depthP95 = stats.depthP95;
+    } else {
+      const depths = new Float32Array(count);
+      for (let i = 0; i < count; i++) {
+        depths[i] = Math.abs(positions[i * 3 + 2]);
+      }
+      depths.sort();
+      depthP5 = depths[Math.floor(count * 0.05)] ?? 0;
+      depthP95 = depths[Math.floor(count * 0.95)] ?? 0;
     }
+    const depthRange = depthP95 - depthP5;
 
     let maxSpeed = 0;
     const speeds = new Float32Array(count);
@@ -188,13 +189,13 @@ export class SceneBuilder {
       let r, g, b;
 
       if (colorMode === 'depth') {
-        // Use the actual vertex Y position for smooth depth coloring
         const depth = Math.abs(positions[dataIndex * 3 + 2]);
-        const t = maxDepth > 0 ? depth / maxDepth : 0;
+        const t = depthRange > 0 ? Math.max(0, Math.min(1, (depth - depthP5) / depthRange)) : 0;
 
-        r = 0.0 + t * (0.4 - 0.0);       // blue -> purple
-        g = 0.3 + t * (0.0 - 0.3);
-        b = 0.8 + t * (0.6 - 0.8);
+        const color = getDepthColor(t);
+        r = color.r;
+        g = color.g;
+        b = color.b;
       } else if (colorMode === 'speed') {
         const speed = speeds[dataIndex];
         const t = maxSpeed > 0 ? Math.min(speed / maxSpeed, 1.0) : 0;
@@ -337,17 +338,13 @@ export class SceneBuilder {
   dispose() {
     cancelAnimationFrame(this._animFrameId);
     window.removeEventListener('resize', this._onResize);
+    document.removeEventListener('pointermove', this._onDocPointerMove);
+    document.removeEventListener('pointerup', this._onDocPointerUp);
 
     if (this.tubeMesh) {
       this.tubeMesh.geometry.dispose();
       this.tubeMesh.material.dispose();
       this.scene.remove(this.tubeMesh);
-    }
-
-    if (this.lineMesh) {
-      this.lineMesh.geometry.dispose();
-      this.lineMesh.material.dispose();
-      this.scene.remove(this.lineMesh);
     }
 
     if (this.marker) {

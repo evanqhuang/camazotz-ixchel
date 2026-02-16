@@ -40,6 +40,15 @@ export function computeStats(parsedData) {
     maxDepth = Math.max(maxDepth, Math.abs(pz));
   }
 
+  // Compute depth percentiles for color normalization
+  const depths = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    depths[i] = Math.abs(positions[i * 3 + 2]);
+  }
+  depths.sort();
+  const depthP5 = depths[Math.floor(count * 0.05)] ?? 0;
+  const depthP95 = depths[Math.floor(count * 0.95)] ?? maxDepth;
+
   const avgSpeed = duration > 0 ? totalDistance / duration : 0;
 
   let flaggedCount = 0;
@@ -54,6 +63,8 @@ export function computeStats(parsedData) {
     duration,
     totalDistance,
     maxDepth,
+    depthP5,
+    depthP95,
     avgSpeed,
     flaggedPercent,
     boundingBox: {

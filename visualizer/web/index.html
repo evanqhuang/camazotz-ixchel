@@ -22,6 +22,8 @@
       <p>Drop a navigation CSV file here</p>
       <label for="file-input" class="file-button">Or choose file</label>
       <input type="file" id="file-input" accept=".csv">
+      <p class="sample-divider">or</p>
+      <a href="#" id="sample-link" class="sample-link">Try a sample dive</a>
     </div>
   </div>
 
@@ -32,24 +34,15 @@
     <div id="stats-content"></div>
   </div>
 
-  <div id="controls-panel" class="panel hidden">
-    <label for="color-mode">Color Mode</label>
-    <select id="color-mode">
-      <option value="depth">Depth</option>
-      <option value="speed">Speed</option>
-      <option value="flags">Flags</option>
-    </select>
-  </div>
-
-  <div id="environment-panel" class="panel hidden">
-    <h3>Environment</h3>
-    <div class="toggle-row">
-      <input type="checkbox" id="toggle-cave" checked>
-      <label for="toggle-cave">Cave Walls</label>
-    </div>
-    <div class="toggle-row">
-      <input type="checkbox" id="toggle-grid" checked>
-      <label for="toggle-grid">Reference Grid</label>
+  <div class="left-sidebar">
+    <div id="controls-panel" class="panel hidden">
+      <label for="color-mode">Color Mode</label>
+      <select id="color-mode">
+        <option value="depth">Depth</option>
+        <option value="speed">Speed</option>
+        <option value="flags">Flags</option>
+      </select>
+      <button id="export-map-btn" class="export-button">Export Stick Map</button>
     </div>
   </div>
 

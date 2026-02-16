@@ -4,7 +4,8 @@ import { loadUnitPreferences } from './units.js';
 import { SceneBuilder } from './scene-builder.js';
 import { Timeline } from './timeline.js';
 import { CaveEnvironment } from './cave-environment.js';
-import { EnvironmentControls } from './environment-controls.js';
+import { StickMap } from './stick-map.js';
+import { generateSampleDiveCSV } from './sample-data.js';
 
 loadUnitPreferences();
 
@@ -16,14 +17,68 @@ const controlsPanel = document.getElementById('controls-panel');
 const timelinePanel = document.getElementById('timeline-panel');
 const colorModeSelect = document.getElementById('color-mode');
 const canvas = document.getElementById('viewport');
-const environmentPanel = document.getElementById('environment-panel');
 
 let sceneBuilder = null;
 let timeline = null;
 let parsedData = null;
 let caveEnv = null;
-let envControls = null;
 let timelineRafId = null;
+let cachedStats = null;
+
+function loadVisualization(csvText) {
+  try {
+    parsedData = parseNavCSV(csvText);
+
+    dropZone.classList.add('hidden');
+    statsPanel.classList.remove('hidden');
+    controlsPanel.classList.remove('hidden');
+    timelinePanel.classList.remove('hidden');
+
+    if (!sceneBuilder) {
+      sceneBuilder = new SceneBuilder(canvas);
+      sceneBuilder.animate();
+    } else {
+      if (timelineRafId) {
+        cancelAnimationFrame(timelineRafId);
+        timelineRafId = null;
+      }
+      timeline = null;
+      if (caveEnv) {
+        caveEnv.dispose();
+        caveEnv = null;
+      }
+      sceneBuilder.dispose();
+      sceneBuilder = new SceneBuilder(canvas);
+      sceneBuilder.animate();
+    }
+
+    cachedStats = computeStats(parsedData);
+    statsContent.innerHTML = formatStats(cachedStats);
+    bindUnitToggles(cachedStats, statsContent);
+
+    sceneBuilder.buildPath(parsedData, colorModeSelect.value, cachedStats);
+
+    const pathMetrics = sceneBuilder.getPathMetrics();
+    if (pathMetrics) {
+      caveEnv = new CaveEnvironment(sceneBuilder.scene);
+      caveEnv.build(pathMetrics);
+    }
+
+    const marker = sceneBuilder.createMarker();
+    timeline = new Timeline(parsedData, marker, sceneBuilder);
+
+    timelineRafId = requestAnimationFrame(function animate(time) {
+      if (timeline) {
+        timeline.update(time);
+      }
+      timelineRafId = requestAnimationFrame(animate);
+    });
+
+  } catch (error) {
+    console.error('Error parsing CSV:', error);
+    alert(`Error parsing CSV file: ${error.message}`);
+  }
+}
 
 function handleFile(file) {
   if (!file || !file.name.endsWith('.csv')) {
@@ -34,64 +89,7 @@ function handleFile(file) {
   const reader = new FileReader();
 
   reader.onload = (e) => {
-    try {
-      const text = e.target.result;
-      parsedData = parseNavCSV(text);
-
-      dropZone.classList.add('hidden');
-      statsPanel.classList.remove('hidden');
-      controlsPanel.classList.remove('hidden');
-      timelinePanel.classList.remove('hidden');
-
-      if (!sceneBuilder) {
-        sceneBuilder = new SceneBuilder(canvas);
-        sceneBuilder.animate();
-      } else {
-        if (caveEnv) {
-          caveEnv.dispose();
-          caveEnv = null;
-        }
-        if (envControls) {
-          envControls.dispose();
-          envControls = null;
-        }
-        sceneBuilder.dispose();
-        sceneBuilder = new SceneBuilder(canvas);
-        sceneBuilder.animate();
-      }
-
-      sceneBuilder.buildPath(parsedData, colorModeSelect.value);
-
-      const pathMetrics = sceneBuilder.getPathMetrics();
-      if (sceneBuilder.curve && pathMetrics) {
-        caveEnv = new CaveEnvironment(sceneBuilder.scene);
-        caveEnv.build(sceneBuilder.curve, pathMetrics);
-        envControls = new EnvironmentControls(caveEnv);
-        environmentPanel.classList.remove('hidden');
-      }
-
-      const stats = computeStats(parsedData);
-      statsContent.innerHTML = formatStats(stats);
-      bindUnitToggles(stats, statsContent);
-
-      const marker = sceneBuilder.createMarker();
-      timeline = new Timeline(parsedData, marker, sceneBuilder);
-
-      if (timelineRafId) {
-        cancelAnimationFrame(timelineRafId);
-      }
-
-      timelineRafId = requestAnimationFrame(function animate(time) {
-        if (timeline) {
-          timeline.update(time);
-        }
-        timelineRafId = requestAnimationFrame(animate);
-      });
-
-    } catch (error) {
-      console.error('Error parsing CSV:', error);
-      alert(`Error parsing CSV file: ${error.message}`);
-    }
+    loadVisualization(e.target.result);
   };
 
   reader.onerror = () => {
@@ -100,6 +98,12 @@ function handleFile(file) {
 
   reader.readAsText(file);
 }
+
+dropZone.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  dropZone.classList.add('drag-over');
+});
 
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
@@ -110,7 +114,9 @@ dropZone.addEventListener('dragover', (e) => {
 dropZone.addEventListener('dragleave', (e) => {
   e.preventDefault();
   e.stopPropagation();
-  dropZone.classList.remove('drag-over');
+  if (!dropZone.contains(e.relatedTarget)) {
+    dropZone.classList.remove('drag-over');
+  }
 });
 
 dropZone.addEventListener('drop', (e) => {
@@ -135,4 +141,23 @@ colorModeSelect.addEventListener('change', (e) => {
   if (sceneBuilder && parsedData) {
     sceneBuilder.setColorMode(parsedData, e.target.value);
   }
+});
+
+document.getElementById('export-map-btn').addEventListener('click', () => {
+  if (!parsedData) return;
+  const btn = document.getElementById('export-map-btn');
+  btn.disabled = true;
+  btn.textContent = 'Exporting...';
+
+  const stats = cachedStats;
+  const stickMap = new StickMap(parsedData, stats, colorModeSelect.value);
+  stickMap.export('cave-stick-map.png', () => {
+    btn.disabled = false;
+    btn.textContent = 'Export Stick Map';
+  });
+});
+
+document.getElementById('sample-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  loadVisualization(generateSampleDiveCSV());
 });

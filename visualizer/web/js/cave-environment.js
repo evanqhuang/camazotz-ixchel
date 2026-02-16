@@ -1,76 +1,15 @@
 import * as THREE from 'three';
-import { SimplexNoise3D } from './simplex-noise.js';
 
 export class CaveEnvironment {
   constructor(scene) {
     this.scene = scene;
-    this.caveMesh = null;
     this.gridGroup = null;
     this._labelTextureCache = new Map();
   }
 
-  build(curve, pathMetrics) {
-    const { size, center, maxDim, box } = pathMetrics;
-
-    this.buildCaveTunnel(curve, maxDim);
+  build(pathMetrics) {
+    const { size, center, box } = pathMetrics;
     this.buildGrid(center, size, box);
-  }
-
-  buildCaveTunnel(curve, maxDim) {
-    const baseRadius = Math.min(Math.max(maxDim * 0.05, 1.5), 8.0);
-    const tubularSegments = Math.min(Math.round(curve.points.length * 4), 600);
-    const radialSegments = 24;
-
-    const geometry = new THREE.TubeGeometry(
-      curve,
-      tubularSegments,
-      baseRadius,
-      radialSegments,
-      false
-    );
-
-    geometry.computeVertexNormals();
-
-    const noise = new SimplexNoise3D(42);
-    const position = geometry.attributes.position;
-    const normal = geometry.attributes.normal;
-    const totalRings = tubularSegments + 1;
-
-    for (let i = 0; i < position.count; i++) {
-      const x = position.getX(i);
-      const y = position.getY(i);
-      const z = position.getZ(i);
-
-      const nx = normal.getX(i);
-      const ny = normal.getY(i);
-      const nz = normal.getZ(i);
-
-      const ringIndex = Math.floor(i / (radialSegments + 1));
-      const t = ringIndex / totalRings;
-
-      const radiusScale = 0.75 + 0.5 * (noise.noise3D(t * 2.0, 0, 0) * 0.5 + 0.5);
-
-      const octave1 = noise.noise3D(x * 0.3, y * 0.3, z * 0.3) * baseRadius * 0.35;
-      const octave2 = noise.noise3D(x * 1.2, y * 1.2, z * 1.2) * baseRadius * 0.10;
-
-      const displacement = (octave1 + octave2) * radiusScale;
-
-      position.setXYZ(i, x + nx * displacement, y + ny * displacement, z + nz * displacement);
-    }
-
-    position.needsUpdate = true;
-    geometry.computeVertexNormals();
-
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xc4b5a0,
-      roughness: 0.75,
-      metalness: 0.1,
-      side: THREE.BackSide,
-      flatShading: true,
-    });
-
-    this.caveMesh = new THREE.Mesh(geometry, material);
-    this.scene.add(this.caveMesh);
   }
 
   buildGrid(_center, size, box) {
@@ -270,26 +209,7 @@ export class CaveEnvironment {
     return sprite;
   }
 
-  setVisible(element, visible) {
-    const targets = {
-      cave: this.caveMesh,
-      grid: this.gridGroup,
-    };
-
-    const target = targets[element];
-    if (target) {
-      target.visible = visible;
-    }
-  }
-
   dispose() {
-    if (this.caveMesh) {
-      this.scene.remove(this.caveMesh);
-      this.caveMesh.geometry.dispose();
-      this.caveMesh.material.dispose();
-      this.caveMesh = null;
-    }
-
     if (this.gridGroup) {
       this.gridGroup.traverse((child) => {
         if (child.geometry) {
