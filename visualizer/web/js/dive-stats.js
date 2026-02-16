@@ -1,3 +1,5 @@
+import { convertValue, getUnit, getPrecision, cycleUnit } from './units.js';
+
 export function computeStats(parsedData) {
   const { timestamps, positions, deltaDistances, flags, count } = parsedData;
 
@@ -24,7 +26,7 @@ export function computeStats(parsedData) {
     const pz = positions[i * 3 + 2];
 
     const vizX = px;
-    const vizY = -pz;
+    const vizY = pz;
     const vizZ = py;
 
     minPos[0] = Math.min(minPos[0], vizX);
@@ -73,12 +75,25 @@ export function formatStats(stats) {
   } = stats;
 
   const formatDuration = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
+    const totalSeconds = Math.floor(seconds);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const flaggedClass = flaggedPercent > 50 ? 'critical' : flaggedPercent > 10 ? 'warning' : '';
+
+  const distanceValue = convertValue('distance', totalDistance);
+  const distanceUnit = getUnit('distance');
+  const distancePrecision = getPrecision('distance');
+
+  const depthValue = convertValue('depth', maxDepth);
+  const depthUnit = getUnit('depth');
+  const depthPrecision = getPrecision('depth');
+
+  const speedValue = convertValue('speed', avgSpeed);
+  const speedUnit = getUnit('speed');
+  const speedPrecision = getPrecision('speed');
 
   return `
     <div class="stat-row">
@@ -87,15 +102,15 @@ export function formatStats(stats) {
     </div>
     <div class="stat-row">
       <span class="stat-label">Distance:</span>
-      <span class="stat-value">${totalDistance.toFixed(2)} m</span>
+      <span class="stat-value"><span class="stat-number" data-stat="distance">${distanceValue.toFixed(distancePrecision)}</span> <span class="stat-unit" data-stat="distance">${distanceUnit}</span></span>
     </div>
     <div class="stat-row">
       <span class="stat-label">Max Depth:</span>
-      <span class="stat-value">${maxDepth.toFixed(2)} m</span>
+      <span class="stat-value"><span class="stat-number" data-stat="depth">${depthValue.toFixed(depthPrecision)}</span> <span class="stat-unit" data-stat="depth">${depthUnit}</span></span>
     </div>
     <div class="stat-row">
       <span class="stat-label">Avg Speed:</span>
-      <span class="stat-value">${avgSpeed.toFixed(3)} m/s</span>
+      <span class="stat-value"><span class="stat-number" data-stat="speed">${speedValue.toFixed(speedPrecision)}</span> <span class="stat-unit" data-stat="speed">${speedUnit}</span></span>
     </div>
     <div class="stat-row">
       <span class="stat-label">Flagged:</span>
@@ -106,4 +121,40 @@ export function formatStats(stats) {
       <span class="stat-value">${sampleCount.toLocaleString()}</span>
     </div>
   `;
+}
+
+export function bindUnitToggles(stats, container) {
+  const RAW_VALUES = {
+    distance: stats.totalDistance,
+    depth: stats.maxDepth,
+    speed: stats.avgSpeed,
+  };
+
+  const unitElements = container.querySelectorAll('.stat-unit');
+
+  unitElements.forEach(element => {
+    element.addEventListener('click', () => {
+      const statName = element.getAttribute('data-stat');
+      if (!statName || !RAW_VALUES.hasOwnProperty(statName)) {
+        return;
+      }
+
+      cycleUnit(statName);
+
+      const rawValue = RAW_VALUES[statName];
+      const convertedValue = convertValue(statName, rawValue);
+      const precision = getPrecision(statName);
+      const unit = getUnit(statName);
+
+      const numberElement = container.querySelector(`.stat-number[data-stat="${statName}"]`);
+      const unitElement = container.querySelector(`.stat-unit[data-stat="${statName}"]`);
+
+      if (numberElement) {
+        numberElement.textContent = convertedValue.toFixed(precision);
+      }
+      if (unitElement) {
+        unitElement.textContent = unit;
+      }
+    });
+  });
 }

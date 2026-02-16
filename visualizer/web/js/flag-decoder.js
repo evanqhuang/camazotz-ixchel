@@ -26,11 +26,11 @@ export function flagColor(flag) {
 
   switch (severity) {
     case 'ok':
-      return 0x00ff88;
+      return 0x00994d;
     case 'warning':
-      return 0xffcc00;
+      return 0xcc8800;
     case 'critical':
-      return 0xff3333;
+      return 0xcc0000;
     default:
       return 0xffffff;
   }

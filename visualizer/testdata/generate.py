@@ -3,7 +3,7 @@
 Synthetic test data generator for cave dive visualization.
 
 Generates CSV files matching the firmware's SDIO logger format with
-realistic dive scenarios including sensor degradation.
+a realistic 2-hour cave dive including sensor degradation.
 """
 
 import argparse
@@ -32,23 +32,6 @@ ENCODER_WHEEL_RADIUS_M = 0.025
 
 
 @dataclass
-class NavigationRow:
-    """Single navigation data row."""
-    timestamp_ms: int
-    seq: int
-    angular_delta: float
-    qw: float
-    qx: float
-    qy: float
-    qz: float
-    px: float
-    py: float
-    pz: float
-    delta_dist: float
-    flags: int
-
-
-@dataclass
 class EventRow:
     """Single event log row."""
     timestamp_ms: int
@@ -64,25 +47,6 @@ def euler_to_quat(roll: float, pitch: float, yaw: float) -> Tuple[float, float, 
     return q[3], q[0], q[1], q[2]  # Return as (w, x, y, z)
 
 
-def quat_to_forward_vector(qw: float, qx: float, qy: float, qz: float) -> np.ndarray:
-    """
-    Extract forward vector from quaternion.
-    Forward = column 0 of rotation matrix = [1-2(yy+zz), 2(xy+wz), 2(xz-wy)]
-    """
-    yy = qy * qy
-    zz = qz * qz
-    xy = qx * qy
-    xz = qx * qz
-    wz = qw * qz
-    wy = qw * qy
-
-    return np.array([
-        1.0 - 2.0 * (yy + zz),
-        2.0 * (xy + wz),
-        2.0 * (xz - wy)
-    ])
-
-
 def compute_orientation_from_tangent(tangent: np.ndarray) -> Tuple[float, float, float, float]:
     """
     Compute quaternion from path tangent vector.
@@ -94,7 +58,12 @@ def compute_orientation_from_tangent(tangent: np.ndarray) -> Tuple[float, float,
         (qw, qx, qy, qz) quaternion
     """
     # Normalize tangent
-    tangent = tangent / np.linalg.norm(tangent)
+    norm = np.linalg.norm(tangent)
+    if norm > 1e-9:
+        tangent = tangent / norm
+    else:
+        # Zero tangent, default to identity orientation
+        return (1.0, 0.0, 0.0, 0.0)
 
     # Compute euler angles
     heading = np.arctan2(tangent[1], tangent[0])  # yaw
@@ -102,20 +71,6 @@ def compute_orientation_from_tangent(tangent: np.ndarray) -> Tuple[float, float,
     roll = 0.0
 
     return euler_to_quat(roll, pitch, heading)
-
-
-def write_nav_csv(rows: List[NavigationRow], filepath: Path):
-    """Write navigation CSV with firmware format."""
-    with open(filepath, 'w') as f:
-        # Header
-        f.write('timestamp_ms,seq,angular_delta,qw,qx,qy,qz,px,py,pz,delta_dist,flags\n')
-
-        # Data rows
-        for row in rows:
-            f.write(f'{row.timestamp_ms},{row.seq},{row.angular_delta:.6f},'
-                   f'{row.qw:.6f},{row.qx:.6f},{row.qy:.6f},{row.qz:.6f},'
-                   f'{row.px:.4f},{row.py:.4f},{row.pz:.4f},'
-                   f'{row.delta_dist:.6f},0x{row.flags:02X}\n')
 
 
 def write_events_csv(events: List[EventRow], filepath: Path):
@@ -129,125 +84,64 @@ def write_events_csv(events: List[EventRow], filepath: Path):
             f.write(f'{event.timestamp_ms},{event.seq},{event.tag},0x{event.flags:02X}\n')
 
 
-def generate_straight_dive(output_dir: Path, rng: np.random.Generator):
+def generate_full_cave_dive(output_dir: Path, rng: np.random.Generator):
     """
-    Generate Scenario 1: Simple straight dive.
+    Generate a realistic 2-hour Ponderosa-style Yucatan cenote cave dive.
 
-    60 seconds, 50m horizontal, gentle descent to -15m, clean flags.
+    This is a one-way exploration/mapping dive with NO return path.
+    The diver enters, maps the cave system, and the data records the full survey.
     """
-    duration_s = 60
+    duration_s = 7200  # 2 hours
     num_samples = duration_s * TICK_RATE_HZ
 
-    # Target velocity: 50m / 60s = 0.833 m/s
-    target_velocity = 0.833
-    delta_dist = target_velocity / TICK_RATE_HZ
-
-    # Generate path
-    nav_rows = []
-    events = []
-
-    # Initial state
-    position = np.array([0.0, 0.0, 0.0])
-
-    # Constant heading (forward along X), gentle downward pitch
-    # Descend 15m over 60s = -0.25 m/s vertical
-    heading = 0.0
-    pitch = -np.arctan2(0.25, target_velocity)  # Small downward angle
-    roll = 0.0
-
-    qw, qx, qy, qz = euler_to_quat(roll, pitch, heading)
-
-    # Start event
-    events.append(EventRow(
-        timestamp_ms=0,
-        seq=0,
-        tag='START',
-        flags=0x00
-    ))
-
-    for i in range(num_samples):
-        timestamp_ms = i * TICK_PERIOD_MS
-
-        # Compute forward vector and integrate position
-        forward = quat_to_forward_vector(qw, qx, qy, qz)
-        position = position + forward * delta_dist
-
-        # Add tiny noise for realism
-        noisy_position = position + rng.normal(0, 0.001, 3)
-
-        angular_delta = delta_dist / ENCODER_WHEEL_RADIUS_M
-
-        nav_rows.append(NavigationRow(
-            timestamp_ms=timestamp_ms,
-            seq=i,
-            angular_delta=angular_delta,
-            qw=qw, qx=qx, qy=qy, qz=qz,
-            px=noisy_position[0],
-            py=noisy_position[1],
-            pz=noisy_position[2],
-            delta_dist=delta_dist,
-            flags=0x00
-        ))
-
-    # End event
-    events.append(EventRow(
-        timestamp_ms=(num_samples - 1) * TICK_PERIOD_MS,
-        seq=num_samples - 1,
-        tag='END',
-        flags=0x00
-    ))
-
-    # Write files
-    nav_path = output_dir / 'straight_dive_nav.csv'
-    events_path = output_dir / 'straight_dive_events.csv'
-    write_nav_csv(nav_rows, nav_path)
-    write_events_csv(events, events_path)
-
-    # Print summary
-    final_pos = nav_rows[-1]
-    distance = np.sqrt(final_pos.px**2 + final_pos.py**2 + final_pos.pz**2)
-    print(f'\nStraight Dive Summary:')
-    print(f'  Rows: {len(nav_rows)}')
-    print(f'  Duration: {duration_s}s')
-    print(f'  Distance: {distance:.2f}m')
-    print(f'  Final position: ({final_pos.px:.2f}, {final_pos.py:.2f}, {final_pos.pz:.2f})')
-    print(f'  Depth range: 0.00m to {abs(final_pos.pz):.2f}m')
-    print(f'  Files: {nav_path.name}, {events_path.name}')
-
-
-def generate_complex_cave(output_dir: Path, rng: np.random.Generator):
-    """
-    Generate Scenario 2: Complex cave system with sensor degradation.
-
-    200 seconds, splined path through waypoints, multiple degraded sections.
-    """
-    duration_s = 200
-    num_samples = duration_s * TICK_RATE_HZ
-
-    # Define waypoints (time, x, y, z)
-    # Cave system: entry, left chamber, restriction, main gallery descent, exit
+    # Stick map with gradual bends at T-junctions (~45-50 deg turns) (time_s, x, y, z)
     waypoints = np.array([
-        [0,    0,    0,    0],     # Entry
-        [30,   25,   0,   -5],     # Initial descent
-        [50,   35,  -10,  -7],     # Left turn into side chamber
-        [80,   40,  -15,  -10],    # Side chamber
-        [100,  50,  -15,  -12],    # Restriction start
-        [120,  60,  -12,  -15],    # Restriction end
-        [140,  75,  -8,   -25],    # Main gallery descent
-        [170,  90,  -5,   -30],    # Deepest point
-        [200,  110,  0,   -10],    # Exit ascent
+        # Entry & Descent heading ENE (0-900s)
+        (0,      0,    0,     0),       # Surface
+        (60,     5,    1,    -3),       # Descent
+        (200,    15,   3,   -10),       # Cave mouth
+        (500,    38,   8,   -12),       # ENE passage
+        (900,    60,  15,   -13),       # Approaching T1
+
+        # T1: bend left — ENE to NNE (900-2400s)
+        (1100,   68,  22,   -14),      # Passage curving left
+        (1300,   74,  32,   -13),      # Through the bend
+        (1600,   80,  52,   -15),      # Now heading NNE
+        (1900,   84,  72,   -14),      # NNE passage
+        (2200,   87,  92,   -16),      # Continuing NNE
+        (2400,   88, 108,   -15),      # Approaching T2
+
+        # T2: bend right — NNE to ENE (2400-4200s)
+        (2600,   92, 118,   -16),      # Passage curving right
+        (2800,  100, 126,   -14),      # Through the bend
+        (3100,  118, 135,   -17),      # Now heading ENE
+        (3400,  138, 142,   -18),      # ENE passage
+        (3700,  158, 148,   -16),      # Continuing ENE
+        (4000,  175, 153,   -19),      # Approaching T3
+        (4200,  188, 156,   -17),      # Near T3
+
+        # T3: bend left — ENE to NNE (4200-7200s)
+        (4400,  196, 162,   -18),      # Passage curving left
+        (4600,  202, 172,   -16),      # Through the bend
+        (4900,  206, 190,   -19),      # Now heading NNE
+        (5200,  210, 210,   -20),      # Deepest section
+        (5500,  213, 228,   -18),      # NNE passage
+        (5800,  216, 245,   -17),      # Continuing NNE
+        (6200,  218, 268,   -19),      # Deep passage
+        (6600,  220, 288,   -18),      # Continuing
+        (7000,  222, 308,   -17),      # Near end
+        (7200,  223, 318,   -18),      # End of survey
     ])
 
-    # Create spline for smooth path
+    # Create cubic splines for smooth path
     t_waypoints = waypoints[:, 0]
     x_spline = CubicSpline(t_waypoints, waypoints[:, 1])
     y_spline = CubicSpline(t_waypoints, waypoints[:, 2])
     z_spline = CubicSpline(t_waypoints, waypoints[:, 3])
 
-    # Time array
+    # Vectorized evaluation at all sample times
     t_samples = np.arange(num_samples) / TICK_RATE_HZ
 
-    # Evaluate spline positions
     x_path = x_spline(t_samples)
     y_path = y_spline(t_samples)
     z_path = z_spline(t_samples)
@@ -257,27 +151,44 @@ def generate_complex_cave(output_dir: Path, rng: np.random.Generator):
     dy = y_spline(t_samples, 1)
     dz = z_spline(t_samples, 1)
 
-    # Compute inter-point distances along the spline
-    # In firmware, position = accumulated sum of forward_vector * delta_dist.
-    # The spline positions represent that accumulated result.
+    # Compute positions and distances
     positions = np.column_stack([x_path, y_path, z_path])
     deltas = np.diff(positions, axis=0)
     distances = np.linalg.norm(deltas, axis=1)
     distances = np.insert(distances, 0, 0.0)  # First tick has zero displacement
 
-    # Generate navigation rows
-    nav_rows = []
-    events = []
+    # Add small noise to positions
+    noisy_positions = positions + rng.normal(0, 0.001, positions.shape)
 
-    # Degraded sections (time ranges in seconds)
+    # Compute angular deltas
+    angular_deltas = distances / ENCODER_WHEEL_RADIUS_M
+
+    # Compute quaternions from tangents (vectorized)
+    # We'll compute this in a loop since quaternion conversion is not easily vectorized
+    quaternions = np.zeros((num_samples, 4))  # (qw, qx, qy, qz)
+    for i in range(num_samples):
+        tangent = np.array([dx[i], dy[i], dz[i]])
+        quaternions[i] = compute_orientation_from_tangent(tangent)
+
+    # Initialize flags array
+    flags = np.zeros(num_samples, dtype=np.uint8)
+
+    # Degraded sections spread across the full 7200s one-way path
     degraded_sections = [
-        (40, 50, SENSOR_CONFLICT | ENCODER_ESTIMATED, 'ENCODER_SLIP'),
-        (80, 90, IMU_ESTIMATED, 'IMU_STALE'),
-        (120, 130, NAV_CRITICAL | DEPTH_VIRTUAL, 'DEPTH_VIRTUAL'),
-        (160, 170, ENCODER_LOST, 'ENCODER_LOST'),
+        (400,   430,  SENSOR_CONFLICT | ENCODER_ESTIMATED, 'ENCODER_SLIP_ENTRY'),
+        (900,   930,  IMU_ESTIMATED, 'IMU_STALE_SOUTH_PASSAGE'),
+        (1600,  1640, DEPTH_UNVERIFIED, 'DEPTH_UNVERIFIED_GALLERY'),
+        (2100,  2200, NAV_CRITICAL | ENCODER_ESTIMATED, 'RESTRICTION_NORTH'),
+        (3200,  3260, IMU_LOST, 'IMU_LOST_JUNCTION'),
+        (4200,  4280, DEPTH_VIRTUAL | NAV_CRITICAL, 'DEPTH_VIRTUAL_DEEP'),
+        (5000,  5100, NAV_CRITICAL | ENCODER_ESTIMATED, 'RESTRICTION_PENETRATION'),
+        (5800,  5830, SENSOR_CONFLICT, 'SENSOR_CONFLICT_SE'),
+        (6500,  6560, ENCODER_LOST, 'ENCODER_LOST_DEEP'),
+        (7000,  7050, IMU_ESTIMATED | DEPTH_UNVERIFIED, 'MULTI_DEGRADE_END'),
     ]
 
-    # Start event
+    # Apply degraded flags
+    events = []
     events.append(EventRow(
         timestamp_ms=0,
         seq=0,
@@ -285,67 +196,29 @@ def generate_complex_cave(output_dir: Path, rng: np.random.Generator):
         flags=0x00
     ))
 
-    # Track last degradation state for event generation
-    last_flags = 0x00
+    for start_t, end_t, section_flags, tag in degraded_sections:
+        start_idx = int(start_t * TICK_RATE_HZ)
+        end_idx = int(end_t * TICK_RATE_HZ)
+        flags[start_idx:end_idx] |= section_flags
 
-    for i in range(num_samples):
-        timestamp_ms = i * TICK_PERIOD_MS
-        t = i / TICK_RATE_HZ
-
-        # Compute orientation from tangent
-        tangent = np.array([dx[i], dy[i], dz[i]])
-        qw, qx, qy, qz = compute_orientation_from_tangent(tangent)
-
-        # Use spline position directly + small noise for realism
-        position = positions[i]
-        noisy_position = position + rng.normal(0, 0.001, 3)
-
-        delta_dist = float(distances[i])
-        angular_delta = float(delta_dist / ENCODER_WHEEL_RADIUS_M)
-
-        # Determine flags based on degraded sections
-        flags = 0x00
-        for start_t, end_t, section_flags, tag_prefix in degraded_sections:
-            if start_t <= t < end_t:
-                flags |= section_flags
-
-        # Generate events on flag transitions
-        if flags != last_flags:
-            if flags != 0x00:
-                # Entering degraded state
-                for start_t, end_t, section_flags, tag_prefix in degraded_sections:
-                    if start_t <= t < end_t and (section_flags & flags):
-                        events.append(EventRow(
-                            timestamp_ms=timestamp_ms,
-                            seq=i,
-                            tag=f'{tag_prefix}_START',
-                            flags=flags
-                        ))
-            else:
-                # Exiting degraded state
-                for start_t, end_t, section_flags, tag_prefix in degraded_sections:
-                    if abs(t - end_t) < 0.01:  # Within one tick of end
-                        events.append(EventRow(
-                            timestamp_ms=timestamp_ms,
-                            seq=i,
-                            tag=f'{tag_prefix}_END',
-                            flags=flags
-                        ))
-            last_flags = flags
-
-        nav_rows.append(NavigationRow(
-            timestamp_ms=timestamp_ms,
-            seq=i,
-            angular_delta=angular_delta,
-            qw=float(qw), qx=float(qx), qy=float(qy), qz=float(qz),
-            px=float(noisy_position[0]),
-            py=float(noisy_position[1]),
-            pz=float(noisy_position[2]),
-            delta_dist=float(delta_dist),
-            flags=flags
+        # Add start event
+        events.append(EventRow(
+            timestamp_ms=start_idx * TICK_PERIOD_MS,
+            seq=start_idx,
+            tag=f'{tag}_START',
+            flags=section_flags
         ))
 
-    # End event
+        # Add end event
+        if end_idx < num_samples:
+            events.append(EventRow(
+                timestamp_ms=end_idx * TICK_PERIOD_MS,
+                seq=end_idx,
+                tag=f'{tag}_END',
+                flags=0x00
+            ))
+
+    # Add end event
     events.append(EventRow(
         timestamp_ms=(num_samples - 1) * TICK_PERIOD_MS,
         seq=num_samples - 1,
@@ -353,37 +226,56 @@ def generate_complex_cave(output_dir: Path, rng: np.random.Generator):
         flags=0x00
     ))
 
-    # Write files
-    nav_path = output_dir / 'complex_cave_nav.csv'
-    events_path = output_dir / 'complex_cave_events.csv'
-    write_nav_csv(nav_rows, nav_path)
+    # Sort events by timestamp
+    events.sort(key=lambda e: e.timestamp_ms)
+
+    # Write navigation CSV using vectorized approach
+    nav_path = output_dir / 'cave_dive_nav.csv'
+    with open(nav_path, 'w') as f:
+        # Header
+        f.write('timestamp_ms,seq,angular_delta,qw,qx,qy,qz,px,py,pz,delta_dist,flags\n')
+
+        # Build format strings for efficient writing
+        timestamps_ms = np.arange(num_samples) * TICK_PERIOD_MS
+        seqs = np.arange(num_samples)
+
+        # Write data rows
+        for i in range(num_samples):
+            f.write(f'{timestamps_ms[i]},{seqs[i]},{angular_deltas[i]:.6f},'
+                   f'{quaternions[i,0]:.6f},{quaternions[i,1]:.6f},'
+                   f'{quaternions[i,2]:.6f},{quaternions[i,3]:.6f},'
+                   f'{noisy_positions[i,0]:.4f},{noisy_positions[i,1]:.4f},'
+                   f'{noisy_positions[i,2]:.4f},{distances[i]:.6f},0x{flags[i]:02X}\n')
+
+    # Write events CSV
+    events_path = output_dir / 'cave_dive_events.csv'
     write_events_csv(events, events_path)
 
     # Print summary
-    final_pos = nav_rows[-1]
-    total_distance = sum(row.delta_dist for row in nav_rows)
-    min_depth = min(row.pz for row in nav_rows)
-    max_depth = max(row.pz for row in nav_rows)
+    total_distance = np.sum(distances)
+    min_depth = np.min(noisy_positions[:, 2])  # Most negative (deepest)
+    max_depth = np.max(noisy_positions[:, 2])  # Least negative (shallowest)
 
-    print(f'\nComplex Cave Summary:')
-    print(f'  Rows: {len(nav_rows)}')
+    print(f'\nPonderosa-Style Cave Survey Summary:')
+    print(f'  Rows: {num_samples}')
     print(f'  Events: {len(events)}')
-    print(f'  Duration: {duration_s}s')
+    print(f'  Duration: {duration_s}s ({duration_s/60:.1f} min)')
     print(f'  Total distance: {total_distance:.2f}m')
-    print(f'  Final position: ({final_pos.px:.2f}, {final_pos.py:.2f}, {final_pos.pz:.2f})')
-    print(f'  Depth range: {max_depth:.2f}m to {abs(min_depth):.2f}m')
+    print(f'  Final position: ({noisy_positions[-1,0]:.2f}, {noisy_positions[-1,1]:.2f}, {noisy_positions[-1,2]:.2f})')
+    print(f'  Depth range: {max_depth:.2f}m (shallowest) to {min_depth:.2f}m (deepest)')
     print(f'  Files: {nav_path.name}, {events_path.name}')
 
     # Print degradation summary
-    print(f'\n  Degraded sections:')
-    for start_t, end_t, section_flags, tag_prefix in degraded_sections:
-        print(f'    {tag_prefix}: {start_t}-{end_t}s (flags=0x{section_flags:02X})')
+    print(f'\n  Degraded sections ({len(degraded_sections)} total):')
+    for start_t, end_t, section_flags, tag in degraded_sections:
+        duration = end_t - start_t
+        print(f'    {tag}: {start_t}-{end_t}s ({duration}s, flags=0x{section_flags:02X})')
 
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Generate synthetic cave dive test data'
+        description='Generate synthetic 2-hour cave dive test data'
     )
     parser.add_argument(
         '--seed',
@@ -406,12 +298,11 @@ def main():
     # Initialize RNG
     rng = np.random.default_rng(args.seed)
 
-    print(f'Generating synthetic test data (seed={args.seed})')
+    print(f'Generating synthetic 2-hour cave dive (seed={args.seed})')
     print(f'Output directory: {args.output_dir}')
 
-    # Generate scenarios
-    generate_straight_dive(args.output_dir, rng)
-    generate_complex_cave(args.output_dir, rng)
+    # Generate cave dive
+    generate_full_cave_dive(args.output_dir, rng)
 
     print('\nGeneration complete.')
 

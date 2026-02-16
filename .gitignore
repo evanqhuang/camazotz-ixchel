@@ -58,7 +58,6 @@ test/build/
 .claude/hooks/
 
 # Visualizer Python virtual environments
-visualizer/pyvista/.venv/
 visualizer/testdata/.venv/
 
 # Visualizer Terraform
@@ -72,6 +71,10 @@ visualizer/infra/terraform.tfvars
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Generated visualizer test data (regenerate with: python3 visualizer/testdata/generate.py)
+visualizer/testdata/*_nav.csv
+visualizer/testdata/*_events.csv
 
 # Screenshots / design artifacts
 web-viewer-initial.png

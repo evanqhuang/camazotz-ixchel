@@ -12,10 +12,9 @@ export class SceneBuilder {
       alpha: false
     });
     this.renderer.setPixelRatio(window.devicePixelRatio);
-    this.renderer.setClearColor(0x0a0e14);
+    this.renderer.setClearColor(0xe8ecf1);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x0a0e14, 100, 300);
 
     this.camera = new THREE.PerspectiveCamera(
       60,
@@ -46,9 +45,13 @@ export class SceneBuilder {
     this.marker = null;
     this.parsedData = null;
     this.tubeParams = null;
+    this.curve = null;
+    this.pathBoundingBox = null;
+    this._animFrameId = null;
 
     this.handleResize();
-    window.addEventListener('resize', () => this.handleResize());
+    this._onResize = () => this.handleResize();
+    window.addEventListener('resize', this._onResize);
   }
 
   handleResize() {
@@ -84,11 +87,12 @@ export class SceneBuilder {
       const pz = positions[i * 3 + 2];
 
       vizPositions[i * 3 + 0] = px;
-      vizPositions[i * 3 + 1] = -pz;
+      vizPositions[i * 3 + 1] = pz;
       vizPositions[i * 3 + 2] = py;
     }
 
-    const downsampleRate = 10;
+    const TARGET_CURVE_POINTS = 1500;
+    const downsampleRate = Math.max(1, Math.floor(count / TARGET_CURVE_POINTS));
     const downsampledPoints = [];
 
     for (let i = 0; i < count; i += downsampleRate) {
@@ -106,7 +110,8 @@ export class SceneBuilder {
 
     if (downsampledPoints.length > 1) {
       const curve = new THREE.CatmullRomCurve3(downsampledPoints);
-      const tubeGeometry = new THREE.TubeGeometry(curve, tubularSegments, 0.15, radialSegments, false);
+      this.curve = curve;
+      const tubeGeometry = new THREE.TubeGeometry(curve, tubularSegments, 0.25, radialSegments, false);
 
       this.applyVertexColors(tubeGeometry, parsedData, colorMode);
 
@@ -120,13 +125,23 @@ export class SceneBuilder {
       this.scene.add(this.tubeMesh);
     }
 
+    const LINE_TARGET_POINTS = 10000;
+    const lineDownsample = Math.max(1, Math.floor(count / LINE_TARGET_POINTS));
+    const lineCount = Math.ceil(count / lineDownsample);
+    const linePositions = new Float32Array(lineCount * 3);
+    for (let i = 0, li = 0; i < count && li < lineCount; i += lineDownsample, li++) {
+      linePositions[li * 3 + 0] = vizPositions[i * 3 + 0];
+      linePositions[li * 3 + 1] = vizPositions[i * 3 + 1];
+      linePositions[li * 3 + 2] = vizPositions[i * 3 + 2];
+    }
+
     const lineGeometry = new THREE.BufferGeometry();
-    lineGeometry.setAttribute('position', new THREE.BufferAttribute(vizPositions, 3));
+    lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
 
     const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0x00d4ff,
+      color: 0x0066cc,
       transparent: true,
-      opacity: 0.3,
+      opacity: 0.7,
       linewidth: 1
     });
 
@@ -177,16 +192,16 @@ export class SceneBuilder {
         const depth = Math.abs(positions[dataIndex * 3 + 2]);
         const t = maxDepth > 0 ? depth / maxDepth : 0;
 
-        r = 0.0 + t * (0.24 - 0.0);     // cyan -> indigo
-        g = 0.83 + t * (0.0 - 0.83);
-        b = 1.0 + t * (0.6 - 1.0);
+        r = 0.0 + t * (0.4 - 0.0);       // blue -> purple
+        g = 0.3 + t * (0.0 - 0.3);
+        b = 0.8 + t * (0.6 - 0.8);
       } else if (colorMode === 'speed') {
         const speed = speeds[dataIndex];
         const t = maxSpeed > 0 ? Math.min(speed / maxSpeed, 1.0) : 0;
 
-        r = 0.0 + t * (1.0 - 0.0);       // green -> red
-        g = 1.0 + t * (0.2 - 1.0);
-        b = 0.53 + t * (0.2 - 0.53);
+        r = 0.13 + t * (0.8 - 0.13);     // forest green -> dark red
+        g = 0.55 + t * (0.13 - 0.55);
+        b = 0.13 + t * (0.13 - 0.13);
       } else {
         // flags mode
         const flag = flags[dataIndex];
@@ -215,14 +230,18 @@ export class SceneBuilder {
 
   fitCameraToPath(vizPositions, count) {
     const box = new THREE.Box3();
+    const tempVec = new THREE.Vector3();
 
     for (let i = 0; i < count; i++) {
-      box.expandByPoint(new THREE.Vector3(
+      tempVec.set(
         vizPositions[i * 3 + 0],
         vizPositions[i * 3 + 1],
         vizPositions[i * 3 + 2]
-      ));
+      );
+      box.expandByPoint(tempVec);
     }
+
+    this.pathBoundingBox = box.clone();
 
     const center = new THREE.Vector3();
     box.getCenter(center);
@@ -232,32 +251,60 @@ export class SceneBuilder {
 
     const maxDim = Math.max(size.x, size.y, size.z);
     const fov = this.camera.fov * (Math.PI / 180);
-    const cameraDistance = maxDim / (2 * Math.tan(fov / 2)) * 1.5;
+    const cameraDistance = maxDim / (2 * Math.tan(fov / 2)) * 1.1;
 
-    this.camera.position.set(
-      center.x + cameraDistance * 0.5,
-      center.y + cameraDistance * 0.5,
-      center.z + cameraDistance * 0.5
+    // Get the start point of the dive (index 0)
+    const startPoint = new THREE.Vector3(
+      vizPositions[0],
+      vizPositions[1],
+      vizPositions[2]
     );
 
-    this.controls.target.copy(center);
+    // Direction from start toward center (XZ plane only for horizontal offset)
+    const dirToCenter = new THREE.Vector3().subVectors(center, startPoint);
+    dirToCenter.y = 0;
+    dirToCenter.normalize();
+
+    // Position camera behind the start point with high isometric viewpoint
+    // - Offset horizontally behind the start (opposite direction from center)
+    // - Elevated above for isometric view
+    this.camera.position.set(
+      startPoint.x - dirToCenter.x * cameraDistance * 0.6,
+      center.y + cameraDistance * 0.8,
+      startPoint.z - dirToCenter.z * cameraDistance * 0.6
+    );
+
+    // Target below center to reduce blank space at top of viewport
+    this.controls.target.set(center.x, center.y - cameraDistance * 0.25, center.z);
     this.controls.update();
   }
 
-  createMarker() {
-    const geometry = new THREE.SphereGeometry(0.3, 16, 16);
+  getPathMetrics() {
+    if (!this.pathBoundingBox) return null;
+    const size = new THREE.Vector3();
+    this.pathBoundingBox.getSize(size);
+    const center = new THREE.Vector3();
+    this.pathBoundingBox.getCenter(center);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    return { size, center, maxDim, box: this.pathBoundingBox.clone() };
+  }
 
-    // Add dummy color attribute to prevent WebGL VAO state mismatch
-    // when renderer switches between tube (vertexColors) and sphere (no vertexColors)
+  createMarker() {
+    // Large bright red sphere marker
+    const geometry = new THREE.SphereGeometry(1.5, 32, 32);
+
+    // Add dummy color attribute for WebGL VAO compatibility
     const posAttr = geometry.getAttribute('position');
     const dummyColors = new Float32Array(posAttr.count * 3);
     dummyColors.fill(0);
     geometry.setAttribute('color', new THREE.BufferAttribute(dummyColors, 3));
 
     const material = new THREE.MeshStandardMaterial({
-      color: 0x00d4ff,
-      emissive: 0x00d4ff,
-      emissiveIntensity: 0.5
+      color: 0xff2222,        // Bright red
+      emissive: 0xff0000,     // Strong red glow
+      emissiveIntensity: 0.8,
+      roughness: 0.2,
+      metalness: 0.3
     });
 
     this.marker = new THREE.Mesh(geometry, material);
@@ -278,16 +325,19 @@ export class SceneBuilder {
     const py = positions[i * 3 + 1];
     const pz = positions[i * 3 + 2];
 
-    return new THREE.Vector3(px, -pz, py);
+    return new THREE.Vector3(px, pz, py);
   }
 
   animate() {
-    requestAnimationFrame(() => this.animate());
+    this._animFrameId = requestAnimationFrame(() => this.animate());
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
 
   dispose() {
+    cancelAnimationFrame(this._animFrameId);
+    window.removeEventListener('resize', this._onResize);
+
     if (this.tubeMesh) {
       this.tubeMesh.geometry.dispose();
       this.tubeMesh.material.dispose();
@@ -305,6 +355,9 @@ export class SceneBuilder {
       this.marker.material.dispose();
       this.scene.remove(this.marker);
     }
+
+    this.curve = null;
+    this.pathBoundingBox = null;
 
     this.controls.dispose();
     this.renderer.dispose();

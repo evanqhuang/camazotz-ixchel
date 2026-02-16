@@ -41,16 +41,37 @@
     </select>
   </div>
 
+  <div id="environment-panel" class="panel hidden">
+    <h3>Environment</h3>
+    <div class="toggle-row">
+      <input type="checkbox" id="toggle-cave" checked>
+      <label for="toggle-cave">Cave Walls</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="toggle-grid" checked>
+      <label for="toggle-grid">Reference Grid</label>
+    </div>
+  </div>
+
   <div id="timeline-panel" class="panel hidden">
+    <div id="timeline-popup" class="timeline-popup hidden">
+      <div class="popup-stat"><span class="popup-label">Time:</span> <span id="popup-time">0:00</span></div>
+      <div class="popup-stat"><span class="popup-label">Depth:</span> <span id="popup-depth">0.00</span> <span id="popup-depth-unit">m</span></div>
+      <div class="popup-stat"><span class="popup-label">Distance:</span> <span id="popup-distance">0.00</span> <span id="popup-distance-unit">m</span></div>
+      <div class="popup-stat"><span class="popup-label">Speed:</span> <span id="popup-speed">0.0</span> <span id="popup-speed-unit">m/min</span></div>
+      <div class="popup-stat popup-flags hidden" id="popup-flags-row"><span class="popup-label">Flags:</span> <span id="popup-flags"></span></div>
+    </div>
     <div id="timeline-controls">
       <button id="play-btn">▶</button>
-      <input type="range" id="timeline-slider" min="0" max="100" value="100" step="1">
+      <input type="range" id="timeline-slider" min="0" max="100" value="0" step="1">
       <span id="time-display">0:00 / 0:00</span>
       <select id="speed-select">
         <option value="1">1x</option>
         <option value="2">2x</option>
         <option value="5">5x</option>
         <option value="10">10x</option>
+        <option value="50">50x</option>
+        <option value="100">100x</option>
       </select>
     </div>
   </div>

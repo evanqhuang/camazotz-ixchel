@@ -1,7 +1,12 @@
 import { parseNavCSV } from './csv-parser.js';
-import { computeStats, formatStats } from './dive-stats.js';
+import { computeStats, formatStats, bindUnitToggles } from './dive-stats.js';
+import { loadUnitPreferences } from './units.js';
 import { SceneBuilder } from './scene-builder.js';
 import { Timeline } from './timeline.js';
+import { CaveEnvironment } from './cave-environment.js';
+import { EnvironmentControls } from './environment-controls.js';
+
+loadUnitPreferences();
 
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
@@ -11,10 +16,14 @@ const controlsPanel = document.getElementById('controls-panel');
 const timelinePanel = document.getElementById('timeline-panel');
 const colorModeSelect = document.getElementById('color-mode');
 const canvas = document.getElementById('viewport');
+const environmentPanel = document.getElementById('environment-panel');
 
 let sceneBuilder = null;
 let timeline = null;
 let parsedData = null;
+let caveEnv = null;
+let envControls = null;
+let timelineRafId = null;
 
 function handleFile(file) {
   if (!file || !file.name.endsWith('.csv')) {
@@ -38,6 +47,14 @@ function handleFile(file) {
         sceneBuilder = new SceneBuilder(canvas);
         sceneBuilder.animate();
       } else {
+        if (caveEnv) {
+          caveEnv.dispose();
+          caveEnv = null;
+        }
+        if (envControls) {
+          envControls.dispose();
+          envControls = null;
+        }
         sceneBuilder.dispose();
         sceneBuilder = new SceneBuilder(canvas);
         sceneBuilder.animate();
@@ -45,17 +62,30 @@ function handleFile(file) {
 
       sceneBuilder.buildPath(parsedData, colorModeSelect.value);
 
+      const pathMetrics = sceneBuilder.getPathMetrics();
+      if (sceneBuilder.curve && pathMetrics) {
+        caveEnv = new CaveEnvironment(sceneBuilder.scene);
+        caveEnv.build(sceneBuilder.curve, pathMetrics);
+        envControls = new EnvironmentControls(caveEnv);
+        environmentPanel.classList.remove('hidden');
+      }
+
       const stats = computeStats(parsedData);
       statsContent.innerHTML = formatStats(stats);
+      bindUnitToggles(stats, statsContent);
 
       const marker = sceneBuilder.createMarker();
       timeline = new Timeline(parsedData, marker, sceneBuilder);
 
-      requestAnimationFrame(function animate(time) {
+      if (timelineRafId) {
+        cancelAnimationFrame(timelineRafId);
+      }
+
+      timelineRafId = requestAnimationFrame(function animate(time) {
         if (timeline) {
           timeline.update(time);
         }
-        requestAnimationFrame(animate);
+        timelineRafId = requestAnimationFrame(animate);
       });
 
     } catch (error) {
@@ -104,11 +134,5 @@ fileInput.addEventListener('change', (e) => {
 colorModeSelect.addEventListener('change', (e) => {
   if (sceneBuilder && parsedData) {
     sceneBuilder.setColorMode(parsedData, e.target.value);
-  }
-});
-
-window.addEventListener('resize', () => {
-  if (sceneBuilder) {
-    sceneBuilder.handleResize();
   }
 });

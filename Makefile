@@ -50,7 +50,7 @@ RESET := \033[0m
 
 .PHONY: all build configure clean rebuild flash flash-swd reboot bootsel \
         test test-verbose test-clean serial info size help debug erase run \
-        viz-serve viz-deploy viz-3d viz-3d-demo \
+        viz-serve viz-deploy viz-testdata \
         tf-init tf-plan tf-apply tf-destroy tf-fmt tf-validate
 
 .DEFAULT_GOAL := help
@@ -203,12 +203,8 @@ viz-serve: ## Serve web visualizer locally (http://localhost:8080)
 viz-deploy: ## Deploy web visualizer to Cloudflare Pages
 	npx wrangler pages deploy visualizer/web --project-name=camazotz-map
 
-viz-3d: ## Launch PyVista 3D visualizer (usage: make viz-3d CSV=path/to/nav.csv)
-	cd visualizer/pyvista && python3 viz.py $(CSV)
-
-viz-3d-demo: ## Launch PyVista 3D visualizer with demo data
-	cd visualizer/pyvista && python3 viz.py ../testdata/complex_cave_nav.csv \
-		--events ../testdata/complex_cave_events.csv
+viz-testdata: ## Generate visualizer test data (requires numpy, scipy)
+	python3 visualizer/testdata/generate.py
 
 # ═══════════════════════════════════════════════════════════════════
 # Infrastructure
@@ -239,7 +235,7 @@ tf-validate: ## Validate Terraform configuration
 help: ## Show this help
 	@printf "$(BOLD)camazotz-ixchel — RP2350 Cave Mapper Firmware$(RESET)\n\n"
 	@printf "$(BOLD)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { \
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ { \
 		printf "  $(CYAN)%-18s$(RESET) %s\n", $$1, $$2 \
 	}' $(MAKEFILE_LIST)
 	@printf "\n$(BOLD)Examples:$(RESET)\n"
