@@ -1,6 +1,7 @@
 import { convertValue, getUnit, getPrecision } from './units.js';
 import { flagColor } from './flag-decoder.js';
 import { getDepthColorCSS, getDepthCSSStops } from './depth-colormap.js';
+import { getSpeedColorCSS, getSpeedCSSStops } from './speed-colormap.js';
 
 /**
  * Stick map renderer for cave dive surveys.
@@ -252,17 +253,19 @@ export class StickMap {
     const deltas = this.data.deltaDistances;
 
     this.speeds = new Float32Array(n);
-    this.maxSpeed = 0;
 
     for (let i = 1; i < n; i++) {
       const dt = (times[i] - times[i - 1]) / 1000; // milliseconds to seconds
       if (dt > 0) {
         this.speeds[i] = deltas[i] / dt;
-        if (this.speeds[i] > this.maxSpeed) {
-          this.maxSpeed = this.speeds[i];
-        }
       }
     }
+
+    // Compute speed percentiles for color normalization (matches depth approach)
+    const sorted = Float32Array.from(this.speeds).sort();
+    this.speedP5 = sorted[Math.floor(n * 0.05)] ?? 0;
+    this.speedP95 = sorted[Math.floor(n * 0.95)] ?? 0;
+    this.speedRange = this.speedP95 - this.speedP5;
   }
 
   /**
@@ -286,15 +289,6 @@ export class StickMap {
   }
 
 
-  /**
-   * Speed color interpolation (CSS RGB string).
-   */
-  _speedColorCSS(t) {
-    const r = Math.floor((0.13 + t * 0.67) * 255);
-    const g = Math.floor((0.55 + t * -0.42) * 255);
-    const b = Math.floor(0.13 * 255);
-    return `rgb(${r}, ${g}, ${b})`;
-  }
 
   /**
    * Get segment color based on color mode.
@@ -311,8 +305,8 @@ export class StickMap {
       return getDepthColorCSS(t);
     } else if (this.colorMode === 'speed') {
       const speed = this.speeds[index];
-      const t = this.maxSpeed > 0 ? Math.min(1, speed / this.maxSpeed) : 0;
-      return this._speedColorCSS(t);
+      const t = this.speedRange > 0 ? Math.max(0, Math.min(1, (speed - this.speedP5) / this.speedRange)) : 0;
+      return getSpeedColorCSS(t);
     } else if (this.colorMode === 'flags') {
       const flag = flags[index];
       const hex = flagColor(flag);
@@ -759,8 +753,7 @@ export class StickMap {
     if (this.colorMode === 'depth') {
       getDepthCSSStops().forEach(s => gradient.addColorStop(s.position, s.color));
     } else if (this.colorMode === 'speed') {
-      gradient.addColorStop(0, this._speedColorCSS(0));
-      gradient.addColorStop(1, this._speedColorCSS(1));
+      getSpeedCSSStops().forEach(s => gradient.addColorStop(s.position, s.color));
     }
 
     ctx.fillStyle = gradient;
@@ -786,10 +779,8 @@ export class StickMap {
       ctx.fillText(`${minDisplay.toFixed(precision)} ${unit}`, x + barWidth + 10, y);
       ctx.fillText(`${maxDisplay.toFixed(precision)} ${unit}`, x + barWidth + 10, y + barHeight);
     } else if (this.colorMode === 'speed') {
-      const minSpeed = 0;
-      const maxSpeed = this.maxSpeed;
-      const minDisplay = convertValue('speed', minSpeed);
-      const maxDisplay = convertValue('speed', maxSpeed);
+      const minDisplay = convertValue('speed', this.speedP5);
+      const maxDisplay = convertValue('speed', this.speedP95);
       const unit = getUnit('speed');
       const precision = getPrecision('speed');
 

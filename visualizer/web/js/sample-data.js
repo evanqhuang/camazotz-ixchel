@@ -45,31 +45,114 @@ function smoothNoise(t, phases) {
 }
 
 /**
- * Generate random cave segments
+ * Generate random cave segments with dramatic depth profiles
  */
-function generateSegments(count, maxDepth, entryHeading) {
+function generateSegments(count, entryHeading) {
+  // Zone types with characteristic depth ranges
+  const ZONE_TYPES = {
+    ENTRY_DESCENT: { depth: [-8, -3], duration: 1 },
+    SHALLOW_PASSAGE: { depth: [-3, -1], duration: [2, 4] },
+    GRADUAL_DESCENT: { depth: [-15, -8], duration: [1, 2] },
+    DEEP_PIT: { depth: [-35, -25], duration: [1, 2] },
+    ASCENT: { depth: [-5, -2], duration: [1, 2] }
+  };
+
+  // Generate depth zones for the cave profile
+  const zones = [];
+  let remainingSegments = count;
+
+  // Always start with entry descent
+  zones.push({
+    type: 'ENTRY_DESCENT',
+    targetDepth: -randomFloat(3, 8),
+    segmentCount: 1
+  });
+  remainingSegments -= 1;
+
+  // Guarantee at least one deep pit and one long shallow passage
+  let hasDeepPit = false;
+  let hasLongShallow = false;
+
+  while (remainingSegments > 0) {
+    let zoneType;
+    let duration;
+
+    // Force a deep pit if we haven't had one and we're past halfway
+    if (!hasDeepPit && remainingSegments <= count / 2) {
+      zoneType = ZONE_TYPES.DEEP_PIT;
+      duration = randomInt(zoneType.duration[0], zoneType.duration[1]);
+      hasDeepPit = true;
+    }
+    // Force a long shallow passage if we haven't had one
+    else if (!hasLongShallow && remainingSegments >= 3) {
+      zoneType = ZONE_TYPES.SHALLOW_PASSAGE;
+      duration = Math.min(remainingSegments, randomInt(3, 4)); // Guarantee 3+ segments
+      hasLongShallow = true;
+    }
+    // Otherwise pick randomly based on current depth and variety
+    else {
+      const lastDepth = zones[zones.length - 1].targetDepth;
+      const weights = {
+        SHALLOW_PASSAGE: lastDepth < -10 ? 0.3 : 0.2,
+        GRADUAL_DESCENT: lastDepth > -10 ? 0.3 : 0.15,
+        DEEP_PIT: !hasDeepPit && lastDepth > -20 ? 0.3 : 0.05,
+        ASCENT: lastDepth < -15 ? 0.2 : 0.05
+      };
+
+      const rand = Math.random();
+      let cumulative = 0;
+      let selectedType = 'SHALLOW_PASSAGE';
+
+      for (const [type, weight] of Object.entries(weights)) {
+        cumulative += weight;
+        if (rand < cumulative) {
+          selectedType = type;
+          break;
+        }
+      }
+
+      zoneType = ZONE_TYPES[selectedType];
+      const durRange = Array.isArray(zoneType.duration) ? zoneType.duration : [zoneType.duration, zoneType.duration];
+      duration = Math.min(remainingSegments, randomInt(durRange[0], durRange[1]));
+    }
+
+    zones.push({
+      type: Object.keys(ZONE_TYPES).find(k => ZONE_TYPES[k] === zoneType),
+      targetDepth: -randomFloat(Math.abs(zoneType.depth[0]), Math.abs(zoneType.depth[1])),
+      segmentCount: duration
+    });
+
+    remainingSegments -= duration;
+  }
+
+  // Generate segments following the zone profile
   const segments = [];
   let currentDepth = 0;
   let currentHeading = entryHeading;
   let biasLeft = Math.random() > 0.5;
+  let zoneIdx = 0;
+  let segmentInZone = 0;
 
   for (let i = 0; i < count; i++) {
-    const isFirst = i === 0;
-    const isLast = i === count - 1;
-
-    // First segment always descends
-    let depthDelta;
-    if (isFirst) {
-      depthDelta = -randomFloat(3, 6);
-    } else if (isLast) {
-      // Last segment mild descent
-      depthDelta = -randomFloat(1, 3);
-    } else {
-      // Middle segments: biased toward going deeper
-      depthDelta = randomFloat(-6, 3) - 1.5;
+    // Move to next zone if we've finished the current one
+    if (segmentInZone >= zones[zoneIdx].segmentCount) {
+      zoneIdx++;
+      segmentInZone = 0;
     }
 
-    const newDepth = Math.max(maxDepth, Math.min(0, currentDepth + depthDelta));
+    const currentZone = zones[zoneIdx];
+    const nextZone = zones[zoneIdx + 1];
+
+    // Interpolate depth target within current zone
+    let targetDepth = currentZone.targetDepth;
+    if (nextZone && segmentInZone === currentZone.segmentCount - 1) {
+      // Last segment in zone transitions toward next zone
+      targetDepth = (currentZone.targetDepth + nextZone.targetDepth) / 2;
+    }
+
+    // Add some variation to target depth
+    const depthVariation = randomFloat(-1, 1);
+    const newDepth = Math.max(-40, Math.min(0, targetDepth + depthVariation));
 
     // Heading changes - alternate bias for natural meandering
     const headingDeltaDeg = randomFloat(15, 90) * (biasLeft ? -1 : 1);
@@ -86,6 +169,7 @@ function generateSegments(count, maxDepth, entryHeading) {
     });
 
     currentDepth = newDepth;
+    segmentInZone++;
   }
 
   return segments;
@@ -143,12 +227,11 @@ function getFlagForSample(sampleIdx, events) {
 export function generateSampleDiveCSV() {
   // Random dive parameters
   const durationMinutes = randomFloat(20, 40);
-  const segmentCount = randomInt(5, 9);
-  const maxDepth = -randomFloat(10, 25); // Negative = deeper
+  const segmentCount = randomInt(8, 14);
   const entryHeading = randomFloat(0, Math.PI * 2);
 
   // Generate cave segments
-  const segments = generateSegments(segmentCount, maxDepth, entryHeading);
+  const segments = generateSegments(segmentCount, entryHeading);
 
   // Scale segment lengths so overall speed is realistic (6-12 m/min)
   const targetSpeedMPerMin = randomFloat(6, 12);
@@ -191,8 +274,11 @@ export function generateSampleDiveCSV() {
   let heading = entryHeading;
   let prevHeading = heading;
 
+  // Emit starting position at origin
+  rows.push([0, 0, '0.000000', Math.cos(entryHeading / 2).toFixed(6), '0.000000', '0.000000', Math.sin(entryHeading / 2).toFixed(6), '0.000000', '0.000000', '0.000000', '0.000000', '0x00'].join(','));
+
   for (let i = 0; i < totalSamples; i++) {
-    const timestamp = i * 100; // 100ms intervals
+    const timestamp = (i + 1) * 100; // 100ms intervals
 
     // Find current segment
     while (currentSegmentIdx < segments.length - 1 &&
@@ -250,7 +336,7 @@ export function generateSampleDiveCSV() {
     // Build row
     const row = [
       timestamp,
-      i,
+      i + 1,
       angularDelta.toFixed(6),
       qw.toFixed(6),
       qx.toFixed(6),

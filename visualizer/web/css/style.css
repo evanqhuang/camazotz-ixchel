@@ -11,6 +11,13 @@
   --panel-border: rgba(0, 102, 204, 0.25);
   --text-color: #1a1a1a;
   --text-dim: #666666;
+  /* Mobile touch targets (Apple HIG minimum) */
+  --touch-target-min: 44px;
+  /* Safe area insets for notched phones */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
 }
 
 .hidden {
@@ -64,6 +71,10 @@ body {
 
 #drop-zone.drag-over #drop-content {
   border-color: var(--accent-color);
+}
+
+#drop-zone.drag-over #drop-content * {
+  pointer-events: none;
 }
 
 #drop-content h1 {
@@ -221,25 +232,100 @@ body {
 
 #controls-panel select {
   width: 100%;
-  padding: 0.5rem;
+  padding: 0.5rem 2rem 0.5rem 0.5rem;
+  -webkit-appearance: none;
+  appearance: none;
   background: rgba(0, 0, 0, 0.05);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%230066cc' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 12px;
   border: 1px solid var(--panel-border);
   border-radius: 0.25rem;
   color: var(--text-color);
   font-size: 1.0rem;
   cursor: pointer;
   outline: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+#controls-panel select:hover {
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
 #controls-panel select:focus {
   border-color: var(--accent-color);
 }
 
+.toggle-switch-label {
+  display: block;
+  font-size: 1.0rem;
+  color: var(--text-dim);
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.toggle-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.toggle-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.switch input {
+  display: none;
+}
+
+.switch-track {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--accent-color);
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(18px);
+}
+
 .export-button {
   display: block;
   width: 100%;
   margin-top: 0.75rem;
-  padding: 0.6rem 1rem;
+  padding: 0.75rem 1rem;
+  min-height: var(--touch-target-min);
   background: var(--accent-color);
   color: #ffffff;
   border: none;
@@ -280,8 +366,10 @@ body {
 }
 
 #play-btn {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
   border: none;
   background: var(--accent-color);
   color: var(--bg-color);
@@ -302,39 +390,58 @@ body {
   flex: 1;
   -webkit-appearance: none;
   appearance: none;
+  height: var(--touch-target-min);
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+}
+
+#timeline-slider::-webkit-slider-runnable-track {
   height: 6px;
   background: rgba(0, 0, 0, 0.12);
   border-radius: 3px;
-  outline: none;
 }
 
 #timeline-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
+  margin-top: -9px;
   background: var(--accent-color);
   border-radius: 50%;
   cursor: pointer;
   transition: transform 0.1s ease;
+  box-shadow: 0 0 0 8px rgba(0, 102, 204, 0.1);
 }
 
-#timeline-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
+#timeline-slider::-webkit-slider-thumb:hover,
+#timeline-slider::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 10px rgba(0, 102, 204, 0.15);
+}
+
+#timeline-slider::-moz-range-track {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 3px;
 }
 
 #timeline-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
   background: var(--accent-color);
   border: none;
   border-radius: 50%;
   cursor: pointer;
   transition: transform 0.1s ease;
+  box-shadow: 0 0 0 8px rgba(0, 102, 204, 0.1);
 }
 
-#timeline-slider::-moz-range-thumb:hover {
-  transform: scale(1.2);
+#timeline-slider::-moz-range-thumb:hover,
+#timeline-slider::-moz-range-thumb:active {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 10px rgba(0, 102, 204, 0.15);
 }
 
 #time-display {
@@ -345,14 +452,25 @@ body {
 }
 
 #speed-select {
-  padding: 0.5rem;
+  padding: 0.5rem 2rem 0.5rem 0.5rem;
+  -webkit-appearance: none;
+  appearance: none;
   background: rgba(0, 0, 0, 0.05);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%230066cc' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 12px;
   border: 1px solid var(--panel-border);
   border-radius: 0.25rem;
   color: var(--text-color);
   font-size: 1.0rem;
   cursor: pointer;
   outline: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+#speed-select:hover {
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
 #speed-select:focus {
@@ -403,10 +521,157 @@ body {
   color: #cc0000;
 }
 
+/* Floating toggle button for mobile panel visibility */
+.panel-toggle {
+  display: none;
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--panel-border);
+  border-radius: 50%;
+  background: var(--panel-bg);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  z-index: 100;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.panel-toggle:active {
+  transform: scale(0.95);
+}
+
+/* CSS Hamburger icon (three lines) */
+.panel-toggle .hamburger {
+  width: 18px;
+  height: 2px;
+  background: var(--text-color);
+  position: relative;
+  transition: background 0.2s ease;
+}
+
+.panel-toggle .hamburger::before,
+.panel-toggle .hamburger::after {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 2px;
+  background: var(--text-color);
+  left: 0;
+  transition: transform 0.2s ease, top 0.2s ease, background 0.2s ease;
+}
+
+.panel-toggle .hamburger::before {
+  top: -6px;
+}
+
+.panel-toggle .hamburger::after {
+  top: 6px;
+}
+
+/* Animate to X when panels visible */
+body.panels-visible .panel-toggle .hamburger {
+  background: transparent;
+}
+
+body.panels-visible .panel-toggle .hamburger::before {
+  transform: rotate(45deg);
+  top: 0;
+  background: white;
+}
+
+body.panels-visible .panel-toggle .hamburger::after {
+  transform: rotate(-45deg);
+  top: 0;
+  background: white;
+}
+
+/* Tablets and large phones */
 @media (max-width: 768px) {
+  /* Show toggle button on mobile */
+  .panel-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Panels hidden by default on mobile */
+  #stats-panel:not(.hidden),
+  .left-sidebar {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-10px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  /* When panels are visible (body has class) */
+  body.panels-visible #stats-panel:not(.hidden),
+  body.panels-visible .left-sidebar {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  /* Toggle button style when panels visible */
+  body.panels-visible .panel-toggle {
+    background: var(--accent-color);
+    color: white;
+  }
+
+  /* More compact stats panel - offset below toggle button */
   #stats-panel {
-    max-width: 200px;
+    top: calc(44px + 1.5rem);
+    max-width: 180px;
+    padding: 0.5rem 0.75rem;
+  }
+
+  #stats-panel h2 {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.25rem;
+  }
+
+  #stats-content {
+    font-size: 0.7rem;
+    line-height: 1.4;
+  }
+
+  #stats-content .stat-row {
+    margin-bottom: 0.25rem;
+  }
+
+  /* More compact controls panel */
+  #controls-panel {
+    padding: 0.5rem 0.75rem;
+    min-width: 140px;
+  }
+
+  #controls-panel label {
     font-size: 0.8rem;
+    margin-bottom: 0.25rem;
+  }
+
+  #controls-panel select {
+    padding: 0.35rem;
+    font-size: 0.85rem;
+  }
+
+  .export-button {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    min-height: var(--touch-target-min);
+  }
+
+  /* Match timeline popup to stats panel sizing */
+  .timeline-popup {
+    font-size: 0.7rem;
+  }
+
+  .popup-stat {
+    gap: 0.35rem;
+    margin-bottom: 0.15rem;
   }
 
   #timeline-panel {
@@ -421,5 +686,149 @@ body {
 
   #drop-content p {
     font-size: 1rem;
+  }
+}
+
+/* Small phones (480px and below) */
+@media (max-width: 480px) {
+  #drop-content {
+    padding: 1.5rem;
+    margin: 0.5rem;
+  }
+
+  #drop-content h1 {
+    font-size: 1.5rem;
+  }
+
+  .left-sidebar {
+    top: 0.5rem;
+    left: 0.5rem;
+  }
+
+  /* Even more compact controls on small phones */
+  #controls-panel {
+    min-width: 120px;
+    padding: 0.4rem 0.5rem;
+  }
+
+  /* Even more compact stats on small phones - offset below toggle button */
+  #stats-panel {
+    top: calc(44px + 1rem);
+    right: 0.5rem;
+    max-width: 130px;
+    min-width: auto;
+    padding: 0.4rem 0.5rem;
+  }
+
+  #stats-panel h2 {
+    font-size: 0.85rem;
+  }
+
+  #stats-content {
+    font-size: 0.6rem;
+  }
+
+  #timeline-panel {
+    bottom: 0.5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+    min-width: auto;
+    max-width: none;
+    transform: none;
+    padding: 0.5rem;
+  }
+
+  #timeline-controls {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  #timeline-slider {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  #play-btn {
+    order: 2;
+  }
+
+  #time-display {
+    order: 3;
+    min-width: 60px;
+    font-size: 0.75rem;
+  }
+
+  #speed-select {
+    order: 4;
+    font-size: 0.8rem;
+    padding: 0.3rem;
+  }
+
+  .timeline-popup {
+    font-size: 0.6rem;
+    padding: 0.4rem 0.5rem;
+  }
+
+  .popup-stat {
+    gap: 0.25rem;
+  }
+}
+
+/* Safe area support for notched phones */
+@media (max-width: 768px) {
+  @supports (padding: env(safe-area-inset-bottom)) {
+    #timeline-panel {
+      padding-bottom: calc(1rem + var(--safe-area-bottom));
+    }
+
+    .left-sidebar {
+      top: calc(1rem + var(--safe-area-top));
+      left: calc(1rem + var(--safe-area-left));
+    }
+
+    #stats-panel {
+      right: calc(1rem + var(--safe-area-right));
+    }
+
+    .panel-toggle {
+      top: calc(0.75rem + var(--safe-area-top));
+      right: calc(0.75rem + var(--safe-area-right));
+    }
+  }
+}
+
+/* Landscape on phones */
+@media (orientation: landscape) and (max-height: 500px) {
+  #stats-panel {
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  #timeline-panel {
+    padding: 0.5rem 1rem;
+  }
+
+  .left-sidebar {
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+}
+
+/* Mobile text for drop zone */
+.desktop-only {
+  display: block;
+}
+
+.mobile-only {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .desktop-only {
+    display: none;
+  }
+
+  .mobile-only {
+    display: block;
   }
 }

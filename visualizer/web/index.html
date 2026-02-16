@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <link rel="icon" type="image/png" href="favicon.png">
   <title>Camazotz Dive Visualizer</title>
   <link rel="stylesheet" href="css/style.css">
@@ -19,8 +19,9 @@
   <div id="drop-zone">
     <div id="drop-content">
       <h1>Camazotz Dive Visualizer</h1>
-      <p>Drop a navigation CSV file here</p>
-      <label for="file-input" class="file-button">Or choose file</label>
+      <p class="desktop-only">Drop a navigation CSV file here</p>
+      <p class="mobile-only">Select a navigation CSV file</p>
+      <label for="file-input" class="file-button">Choose file</label>
       <input type="file" id="file-input" accept=".csv">
       <p class="sample-divider">or</p>
       <a href="#" id="sample-link" class="sample-link">Try a sample dive</a>
@@ -28,6 +29,10 @@
   </div>
 
   <canvas id="viewport"></canvas>
+
+  <button id="panel-toggle" class="panel-toggle" aria-label="Toggle menu">
+    <span class="hamburger"></span>
+  </button>
 
   <div id="stats-panel" class="panel hidden">
     <h2>Dive Stats</h2>
@@ -42,6 +47,24 @@
         <option value="speed">Speed</option>
         <option value="flags">Flags</option>
       </select>
+      <label class="toggle-switch-label">Units</label>
+      <div class="toggle-switch">
+        <span class="toggle-label">m</span>
+        <label class="switch">
+          <input type="checkbox" id="unit-toggle">
+          <span class="switch-track"></span>
+        </label>
+        <span class="toggle-label">ft</span>
+      </div>
+      <label class="toggle-switch-label">Depth Scale</label>
+      <div class="toggle-switch">
+        <span class="toggle-label">1x</span>
+        <label class="switch">
+          <input type="checkbox" id="depth-scale-toggle" checked>
+          <span class="switch-track"></span>
+        </label>
+        <span class="toggle-label">3x</span>
+      </div>
       <button id="export-map-btn" class="export-button">Export Stick Map</button>
     </div>
   </div>

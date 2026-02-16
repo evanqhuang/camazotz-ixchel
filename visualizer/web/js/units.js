@@ -86,6 +86,23 @@ export function convertValue(stat, rawValue) {
   return converter ? converter(rawValue) : rawValue;
 }
 
+export function setUnitSystem(system) {
+  if (system === 'imperial') {
+    unitState.depth = 'ft';
+    unitState.distance = 'ft';
+    unitState.speed = 'ft/min';
+  } else {
+    unitState.depth = 'm';
+    unitState.distance = 'm';
+    unitState.speed = 'm/min';
+  }
+  saveUnitPreferences();
+}
+
+export function getUnitSystem() {
+  return unitState.depth === 'ft' ? 'imperial' : 'metric';
+}
+
 export function getPrecision(stat) {
   const unit = unitState[stat];
 

@@ -7,12 +7,12 @@ export class CaveEnvironment {
     this._labelTextureCache = new Map();
   }
 
-  build(pathMetrics) {
+  build(pathMetrics, depthScale = 1) {
     const { size, center, box } = pathMetrics;
-    this.buildGrid(center, size, box);
+    this.buildGrid(center, size, box, depthScale);
   }
 
-  buildGrid(_center, size, box) {
+  buildGrid(_center, size, box, depthScale = 1) {
     this.gridGroup = new THREE.Group();
 
     const spacing = Math.max(Math.max(size.x, size.z), Math.abs(box.min.y)) > 50 ? 10 : 5;
@@ -83,53 +83,57 @@ export class CaveEnvironment {
 
     // X-axis labels along far Z edge of floor
     for (let x = xMin; x <= xMax; x += spacing) {
-      const label = Math.abs(x - xMin).toFixed(0);
+      const label = Math.abs(Math.round(x));
       const sprite = this._createLabel(`${label}m`, new THREE.Vector3(x, 0.3, zMax + 1));
       this.gridGroup.add(sprite);
     }
 
     // X-axis labels along near Z edge of floor (mirrored)
     for (let x = xMin; x <= xMax; x += spacing) {
-      const label = Math.abs(x - xMin).toFixed(0);
+      const label = Math.abs(Math.round(x));
       const sprite = this._createLabel(`${label}m`, new THREE.Vector3(x, 0.3, zMin - 1));
       this.gridGroup.add(sprite);
     }
 
     // Z-axis labels along left X edge of floor
     for (let z = zMin; z <= zMax; z += spacing) {
-      const label = Math.abs(z - zMin).toFixed(0);
+      const label = Math.abs(Math.round(z));
       const sprite = this._createLabel(`${label}m`, new THREE.Vector3(xMin - 1, 0.3, z));
       this.gridGroup.add(sprite);
     }
 
     // Z-axis labels along right X edge of floor (mirrored)
     for (let z = zMin; z <= zMax; z += spacing) {
-      const label = Math.abs(z - zMin).toFixed(0);
+      const label = Math.abs(Math.round(z));
       const sprite = this._createLabel(`${label}m`, new THREE.Vector3(xMax + 1, 0.3, z));
       this.gridGroup.add(sprite);
     }
 
     // Depth labels on back wall - right edge
     for (let y = -spacing; y >= yMin; y -= spacing) {
-      const sprite = this._createLabel(`${y}m`, new THREE.Vector3(xMax + 1, y, wallZ));
+      const actualDepth = Math.abs(Math.round(y / depthScale));
+      const sprite = this._createLabel(`${actualDepth}m`, new THREE.Vector3(xMax + 1, y, wallZ));
       this.gridGroup.add(sprite);
     }
 
     // Depth labels on back wall - left edge (mirrored)
     for (let y = -spacing; y >= yMin; y -= spacing) {
-      const sprite = this._createLabel(`${y}m`, new THREE.Vector3(xMin - 1, y, wallZ));
+      const actualDepth = Math.abs(Math.round(y / depthScale));
+      const sprite = this._createLabel(`${actualDepth}m`, new THREE.Vector3(xMin - 1, y, wallZ));
       this.gridGroup.add(sprite);
     }
 
     // Depth labels on side wall - far edge
     for (let y = -spacing; y >= yMin; y -= spacing) {
-      const sprite = this._createLabel(`${y}m`, new THREE.Vector3(wallX, y, zMax + 1));
+      const actualDepth = Math.abs(Math.round(y / depthScale));
+      const sprite = this._createLabel(`${actualDepth}m`, new THREE.Vector3(wallX, y, zMax + 1));
       this.gridGroup.add(sprite);
     }
 
     // Depth labels on side wall - near edge (mirrored)
     for (let y = -spacing; y >= yMin; y -= spacing) {
-      const sprite = this._createLabel(`${y}m`, new THREE.Vector3(wallX, y, zMin - 1));
+      const actualDepth = Math.abs(Math.round(y / depthScale));
+      const sprite = this._createLabel(`${actualDepth}m`, new THREE.Vector3(wallX, y, zMin - 1));
       this.gridGroup.add(sprite);
     }
 

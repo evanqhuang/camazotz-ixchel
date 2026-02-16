@@ -2,17 +2,23 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { flagColor } from './flag-decoder.js';
 import { getDepthColor } from './depth-colormap.js';
+import { getSpeedColor } from './speed-colormap.js';
 
 export class SceneBuilder {
   constructor(canvas) {
     this.canvas = canvas;
 
+    // Mobile detection for performance optimization
+    const isMobile = navigator.maxTouchPoints > 0 && window.matchMedia('(max-width: 768px)').matches;
+    const maxDPR = isMobile ? 1.5 : 2;
+
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
-      alpha: false
+      antialias: !isMobile,  // Disable MSAA on mobile for performance
+      alpha: false,
+      powerPreference: isMobile ? 'low-power' : 'high-performance'
     });
-    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxDPR));
     this.renderer.setClearColor(0xe8ecf1);
 
     this.scene = new THREE.Scene();
@@ -69,6 +75,7 @@ export class SceneBuilder {
     this.curve = null;
     this.pathBoundingBox = null;
     this._animFrameId = null;
+    this.endpointMarkers = [];
 
     this.handleResize();
     this._onResize = () => this.handleResize();
@@ -84,8 +91,9 @@ export class SceneBuilder {
     this.renderer.setSize(width, height);
   }
 
-  buildPath(parsedData, colorMode = 'depth', stats = null) {
+  buildPath(parsedData, colorMode = 'depth', stats = null, depthScale = 1) {
     this.parsedData = parsedData;
+    this.depthScale = depthScale;
 
     if (this.tubeMesh) {
       this.scene.remove(this.tubeMesh);
@@ -102,7 +110,7 @@ export class SceneBuilder {
       const pz = positions[i * 3 + 2];
 
       vizPositions[i * 3 + 0] = px;
-      vizPositions[i * 3 + 1] = pz;
+      vizPositions[i * 3 + 1] = pz * depthScale;
       vizPositions[i * 3 + 2] = py;
     }
 
@@ -126,7 +134,7 @@ export class SceneBuilder {
     if (downsampledPoints.length > 1) {
       const curve = new THREE.CatmullRomCurve3(downsampledPoints);
       this.curve = curve;
-      const tubeGeometry = new THREE.TubeGeometry(curve, tubularSegments, 1.5, radialSegments, false);
+      const tubeGeometry = new THREE.TubeGeometry(curve, tubularSegments, 1, radialSegments, false);
 
       this.applyVertexColors(tubeGeometry, parsedData, colorMode, stats);
 
@@ -150,26 +158,30 @@ export class SceneBuilder {
     // Compute depth percentiles for color normalization
     let depthP5, depthP95;
     if (stats) {
-      depthP5 = stats.depthP5;
-      depthP95 = stats.depthP95;
+      depthP5 = stats.depthP5 * (this.depthScale || 1);
+      depthP95 = stats.depthP95 * (this.depthScale || 1);
     } else {
       const depths = new Float32Array(count);
       for (let i = 0; i < count; i++) {
         depths[i] = Math.abs(positions[i * 3 + 2]);
       }
       depths.sort();
-      depthP5 = depths[Math.floor(count * 0.05)] ?? 0;
-      depthP95 = depths[Math.floor(count * 0.95)] ?? 0;
+      depthP5 = (depths[Math.floor(count * 0.05)] ?? 0) * (this.depthScale || 1);
+      depthP95 = (depths[Math.floor(count * 0.95)] ?? 0) * (this.depthScale || 1);
     }
     const depthRange = depthP95 - depthP5;
 
-    let maxSpeed = 0;
     const speeds = new Float32Array(count);
     for (let i = 0; i < count; i++) {
       const dt = i > 0 ? (parsedData.timestamps[i] - parsedData.timestamps[i - 1]) / 1000.0 : 1.0;
       speeds[i] = dt > 0 ? deltaDistances[i] / dt : 0;
-      maxSpeed = Math.max(maxSpeed, speeds[i]);
     }
+
+    // Compute speed percentiles for color normalization (matches depth approach)
+    const sortedSpeeds = Float32Array.from(speeds).sort();
+    const speedP5 = sortedSpeeds[Math.floor(count * 0.05)] ?? 0;
+    const speedP95 = sortedSpeeds[Math.floor(count * 0.95)] ?? 0;
+    const speedRange = speedP95 - speedP5;
 
     // TubeGeometry layout: (tubularSegments + 1) rings, each with (radialSegments + 1) vertices
     const tubSegs = this.tubeParams.tubularSegments;
@@ -189,7 +201,7 @@ export class SceneBuilder {
       let r, g, b;
 
       if (colorMode === 'depth') {
-        const depth = Math.abs(positions[dataIndex * 3 + 2]);
+        const depth = Math.abs(posAttr.getY(v));
         const t = depthRange > 0 ? Math.max(0, Math.min(1, (depth - depthP5) / depthRange)) : 0;
 
         const color = getDepthColor(t);
@@ -197,12 +209,17 @@ export class SceneBuilder {
         g = color.g;
         b = color.b;
       } else if (colorMode === 'speed') {
-        const speed = speeds[dataIndex];
-        const t = maxSpeed > 0 ? Math.min(speed / maxSpeed, 1.0) : 0;
+        const fIdx = u * (count - 1);
+        const i0 = Math.floor(fIdx);
+        const i1 = Math.min(i0 + 1, count - 1);
+        const frac = fIdx - i0;
+        const speed = speeds[i0] + frac * (speeds[i1] - speeds[i0]);
+        const t = speedRange > 0 ? Math.max(0, Math.min(1, (speed - speedP5) / speedRange)) : 0;
 
-        r = 0.13 + t * (0.8 - 0.13);     // forest green -> dark red
-        g = 0.55 + t * (0.13 - 0.55);
-        b = 0.13 + t * (0.13 - 0.13);
+        const color = getSpeedColor(t);
+        r = color.r;
+        g = color.g;
+        b = color.b;
       } else {
         // flags mode
         const flag = flags[dataIndex];
@@ -294,11 +311,7 @@ export class SceneBuilder {
     // Large bright red sphere marker
     const geometry = new THREE.SphereGeometry(1.5, 32, 32);
 
-    // Add dummy color attribute for WebGL VAO compatibility
-    const posAttr = geometry.getAttribute('position');
-    const dummyColors = new Float32Array(posAttr.count * 3);
-    dummyColors.fill(0);
-    geometry.setAttribute('color', new THREE.BufferAttribute(dummyColors, 3));
+    this._addDummyColorAttr(geometry);
 
     const material = new THREE.MeshStandardMaterial({
       color: 0xff2222,        // Bright red
@@ -326,7 +339,112 @@ export class SceneBuilder {
     const py = positions[i * 3 + 1];
     const pz = positions[i * 3 + 2];
 
-    return new THREE.Vector3(px, pz, py);
+    return new THREE.Vector3(px, pz * (this.depthScale || 1), py);
+  }
+
+  _addDummyColorAttr(geometry) {
+    const count = geometry.getAttribute('position').count;
+    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  }
+
+  createTextSprite(text) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    const fontSize = 96;
+
+    canvas.width = 512;
+    canvas.height = 256;
+
+    context.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    context.font = `bold ${fontSize}px Arial`;
+    context.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(6, 3, 1);
+
+    return sprite;
+  }
+
+  createEndpointMarkers(parsedData) {
+    // Clean up previous markers
+    for (const obj of this.endpointMarkers) {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (obj.material.map) obj.material.map.dispose();
+        obj.material.dispose();
+      }
+      this.scene.remove(obj);
+    }
+    this.endpointMarkers = [];
+
+    if (!parsedData || !parsedData.positions || parsedData.count === 0) {
+      return;
+    }
+
+    const { positions, count } = parsedData;
+
+    // START marker at origin (0, 0, 0)
+    const startGeometry = new THREE.SphereGeometry(1.0, 32, 32);
+
+    this._addDummyColorAttr(startGeometry);
+
+    const startMaterial = new THREE.MeshStandardMaterial({
+      color: 0x22ff22,
+      emissive: 0x00ff00,
+      emissiveIntensity: 0.6,
+      roughness: 0.2,
+      metalness: 0.3
+    });
+
+    const startMarker = new THREE.Mesh(startGeometry, startMaterial);
+    startMarker.position.set(0, 0, 0);
+    this.scene.add(startMarker);
+    this.endpointMarkers.push(startMarker);
+
+    // START label
+    const startLabel = this.createTextSprite('START');
+    startLabel.position.set(0, 3, 0);
+    this.scene.add(startLabel);
+    this.endpointMarkers.push(startLabel);
+
+    // END marker at last data point
+    const lastIndex = count - 1;
+    const px = positions[lastIndex * 3 + 0];
+    const py = positions[lastIndex * 3 + 1];
+    const pz = positions[lastIndex * 3 + 2];
+
+    // Apply coordinate transform: data(px, py, pz) -> viz(px, pz, py)
+    const endPos = new THREE.Vector3(px, pz * (this.depthScale || 1), py);
+
+    const endGeometry = new THREE.SphereGeometry(1.0, 32, 32);
+
+    this._addDummyColorAttr(endGeometry);
+
+    const endMaterial = new THREE.MeshStandardMaterial({
+      color: 0xff8822,
+      emissive: 0xff6600,
+      emissiveIntensity: 0.6,
+      roughness: 0.2,
+      metalness: 0.3
+    });
+
+    const endMarker = new THREE.Mesh(endGeometry, endMaterial);
+    endMarker.position.copy(endPos);
+    this.scene.add(endMarker);
+    this.endpointMarkers.push(endMarker);
+
+    // END label
+    const endLabel = this.createTextSprite('END');
+    endLabel.position.set(endPos.x, endPos.y + 3, endPos.z);
+    this.scene.add(endLabel);
+    this.endpointMarkers.push(endLabel);
   }
 
   animate() {
@@ -352,6 +470,17 @@ export class SceneBuilder {
       this.marker.material.dispose();
       this.scene.remove(this.marker);
     }
+
+    // Clean up endpoint markers
+    for (const obj of this.endpointMarkers) {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (obj.material.map) obj.material.map.dispose();
+        obj.material.dispose();
+      }
+      this.scene.remove(obj);
+    }
+    this.endpointMarkers = [];
 
     this.curve = null;
     this.pathBoundingBox = null;
