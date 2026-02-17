@@ -21,6 +21,16 @@ static const lv_color_t COLOR_GRAY   = LV_COLOR_MAKE(0x80, 0x80, 0x80);
 static const lv_color_t COLOR_WHITE  = LV_COLOR_MAKE(0xFF, 0xFF, 0xFF);
 static const lv_color_t COLOR_DIM    = LV_COLOR_MAKE(0x30, 0x30, 0x30);
 
+/* ISR-latched skip flag — set on falling edge, read/cleared by main loop.
+ * volatile bool is a single-byte atomic load/store on Cortex-M33. */
+static volatile bool g_skip_pressed = false;
+
+static void skip_button_isr(uint gpio, uint32_t events) {
+    (void)gpio;
+    (void)events;
+    g_skip_pressed = true;
+}
+
 void Calib_Screen::create() {
     if (screen_ != nullptr) return;
 
@@ -355,6 +365,13 @@ CalibWalkthroughResult Calib_Screen::run(IMU_Wrapper &imu) {
     update_elapsed(0);
     lv_task_handler();
 
+    /* Enable falling-edge interrupt to latch button presses instantly.
+     * Disable-first guards against stale state from a prior invocation. */
+    gpio_set_irq_enabled(TARE_BUTTON_PIN, GPIO_IRQ_EDGE_FALL, false);
+    g_skip_pressed = false;
+    gpio_set_irq_enabled_with_callback(TARE_BUTTON_PIN, GPIO_IRQ_EDGE_FALL, true,
+                                       skip_button_isr);
+
     while (true) {
         watchdog_update();
 
@@ -362,9 +379,16 @@ CalibWalkthroughResult Calib_Screen::run(IMU_Wrapper &imu) {
         uint32_t elapsed_ms = now_ms - start_ms;
         uint32_t phase_dwell_ms = now_ms - phase_start_ms_;
 
-        /* Check TARE button (skip) */
+        /* ISR latch detects brief taps; polling+debounce catches held presses.
+         * TOCTOU on the volatile bool is safe: single-byte atomic on Cortex-M33,
+         * and mechanical bounce (~20ms) settles before the next 100ms poll. */
+        bool latched = g_skip_pressed;
+        if (latched) g_skip_pressed = false;
+
         bool raw_pressed = !gpio_get(TARE_BUTTON_PIN);
-        if (debounce_check(now_ms, raw_pressed, TARE_DEBOUNCE_MS, skip_debounce)) {
+        bool skip = latched || debounce_check(now_ms, raw_pressed, TARE_DEBOUNCE_MS, skip_debounce);
+
+        if (skip) {
             printf("[CALIB] User pressed TARE - skipping calibration\n");
             stdio_flush();
 
@@ -373,6 +397,8 @@ CalibWalkthroughResult Calib_Screen::run(IMU_Wrapper &imu) {
             update_instructions(current_phase_);
             lv_task_handler();
             sleep_ms(500);  /* Brief pause to show skip message */
+
+            gpio_set_irq_enabled(TARE_BUTTON_PIN, GPIO_IRQ_EDGE_FALL, false);
 
             result.final_phase = CalibPhase::Skipped;
             result.final_accuracy = accuracy;
@@ -411,6 +437,8 @@ CalibWalkthroughResult Calib_Screen::run(IMU_Wrapper &imu) {
             update_elapsed(elapsed_ms);
             lv_task_handler();
             sleep_ms(1000);  /* Brief pause to show complete message */
+
+            gpio_set_irq_enabled(TARE_BUTTON_PIN, GPIO_IRQ_EDGE_FALL, false);
 
             result.final_phase = CalibPhase::Complete;
             result.final_accuracy = 3;
