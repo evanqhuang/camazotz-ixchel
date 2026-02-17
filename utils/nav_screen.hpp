@@ -23,6 +23,9 @@ public:
     void show_critical_alert(const char *msg);
     void hide_critical_alert();
     void show_tare_status(bool success, uint32_t now_ms);
+    void show_tare_locked(uint32_t now_ms);
+    void show_ready_alert();
+    void reset_trail();
 
 private:
     static constexpr uint32_t UPDATE_INTERVAL_MS = 200;  /* 5Hz throttle */

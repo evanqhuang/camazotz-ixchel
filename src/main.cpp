@@ -53,7 +53,7 @@ static void perform_shutdown(bool display_ok, bool sd_ok,
     }
 
     /* Log shutdown event */
-    if (sd_ok && sd_logger.is_operational()) {
+    if (sd_ok && sd_logger.is_logging()) {
         sd_logger.log_event("SHUTDOWN", 0);
     }
 
@@ -292,6 +292,9 @@ int main() {
     gpio_set_dir(TARE_BUTTON_PIN, GPIO_IN);
     gpio_pull_up(TARE_BUTTON_PIN);
 
+    double north_offset_rad = 0.0;
+    uint8_t mag_accuracy_at_tare = 0;
+
     /* Guided IMU calibration walkthrough - runs until 3/3 or user skips */
     if (imu_ok && display_ok) {
         display.clear();  // Clear boot log messages before showing walkthrough
@@ -311,8 +314,6 @@ int main() {
             display.show_status("IMU", buf);
         }
 
-        /* Apply tare regardless of outcome */
-        imu.tare_now();
         display.clear();
     }
 
@@ -352,6 +353,7 @@ int main() {
     if (display_ok) {
         nav_screen.create();
         nav_screen.activate();
+        nav_screen.show_ready_alert();
     }
 
     display.show_status("Sys", "Entering main loop");
@@ -371,6 +373,7 @@ int main() {
     static PowerButtonState power_btn_state = {};
     double total_distance_core0 = 0.0;
     bool prev_low_battery = false;
+    bool navigation_active = false;
 
     while (true) {
         watchdog_update();
@@ -408,13 +411,13 @@ int main() {
         depth_flags = depth_recovery_update(depth_recovery_state, dsnap, &z_recovered);
 
         /* Log navigation state to SD card */
-        if (sd_ok) {
+        if (sd_ok && navigation_active) {
             sd_logger.log_state(nav);
         }
 
         /* Flush SD buffer at 10Hz */
         if (++flush_count >= FLUSH_INTERVAL) {
-            if (sd_ok) {
+            if (sd_ok && navigation_active) {
                 sd_logger.flush();
             }
             flush_count = 0;
@@ -432,7 +435,7 @@ int main() {
             combined_flags |= NAV_FLAG_IMU_LOST;
         }
         uint8_t new_flags = combined_flags & ~prev_status_flags;
-        if (sd_ok && new_flags != 0) {
+        if (sd_ok && navigation_active && new_flags != 0) {
             if (new_flags & NAV_FLAG_ENCODER_LOST) {
                 sd_logger.log_event("ENCODER_LOST", combined_flags);
             }
@@ -459,7 +462,11 @@ int main() {
             printf("[ALERT] NAV CRITICAL\n");
         } else if (!curr_critical && prev_critical) {
             if (display_ok) {
-                nav_screen.hide_critical_alert();
+                if (!navigation_active) {
+                    nav_screen.show_ready_alert();
+                } else {
+                    nav_screen.hide_critical_alert();
+                }
             }
             printf("[ALERT] NAV CRITICAL cleared\n");
         }
@@ -471,13 +478,17 @@ int main() {
             if (display_ok) {
                 nav_screen.show_critical_alert("LOW BATTERY");
             }
-            if (sd_ok) {
+            if (sd_ok && navigation_active) {
                 sd_logger.log_event("LOW_BATTERY", combined_flags);
             }
             printf("[ALERT] LOW BATTERY (%u%%)\n", battery.percent());
         } else if (!curr_low_battery && prev_low_battery) {
             if (display_ok) {
-                nav_screen.hide_critical_alert();
+                if (!navigation_active) {
+                    nav_screen.show_ready_alert();
+                } else {
+                    nav_screen.hide_critical_alert();
+                }
             }
         }
         prev_low_battery = curr_low_battery;
@@ -491,14 +502,67 @@ int main() {
             POWER_FEEDBACK_MS, POWER_LONG_PRESS_MS,
             power_btn_state);
 
+        if (btn_action != ButtonAction::None) {
+            printf("[BTN] action=%u raw=%d stable=%d was_pressed=%d nav_active=%d\n",
+                   static_cast<unsigned>(btn_action), raw_pressed,
+                   tare_debounce.stable_state, power_btn_state.was_pressed,
+                   navigation_active);
+            stdio_flush();
+        }
+
         switch (btn_action) {
             case ButtonAction::Tare: {
-                bool tare_ok = calibrator.manual_tare();
-                if (display_ok) {
-                    nav_screen.show_tare_status(tare_ok, now);
+                if (!navigation_active) {
+                    /* === Start dive === */
+
+                    /* 1. Capture magnetic heading before tare */
+                    if (imu_ok) {
+                        Quat pre_tare_q = imu.get_quaternion();
+                        double R_tare[3][3];
+                        quaternion_to_rotation_matrix(pre_tare_q, R_tare);
+                        double pitch_unused;
+                        extract_heading_pitch(R_tare, &north_offset_rad, &pitch_unused);
+                        mag_accuracy_at_tare = imu.get_mag_accuracy();
+
+                        printf("[START] Pre-tare heading: %.4f rad, mag accuracy: %u/3\n",
+                               north_offset_rad, mag_accuracy_at_tare);
+
+                        /* 2. Request tare — executed by Core 1 which owns I2C1 */
+                        core1_request_tare();
+                    }
+
+                    /* 3. Reset Core 1 position to zero */
+                    core1_request_position_reset();
+                    total_distance_core0 = 0.0;
+
+                    /* 4. Start SD logging with metadata */
+                    if (sd_ok) {
+                        NavLogMetadata meta = {};
+                        meta.north_offset_rad = north_offset_rad;
+                        meta.mag_accuracy = mag_accuracy_at_tare;
+                        if (!sd_logger.start_logging(meta)) {
+                            printf("[START] SD logging start failed\n");
+                        }
+                    }
+
+                    /* 5. Clear trail map + hide ready overlay */
+                    if (display_ok) {
+                        nav_screen.reset_trail();
+                        nav_screen.hide_critical_alert();
+                        nav_screen.show_tare_status(true, now);
+                    }
+
+                    navigation_active = true;
+                    printf("[START] Navigation active\n");
+                    stdio_flush();
+                } else {
+                    /* Mid-dive tare disabled: breaks coordinate frame continuity */
+                    if (display_ok) {
+                        nav_screen.show_tare_locked(now);
+                    }
+                    printf("[TARE] Disabled during active navigation\n");
+                    stdio_flush();
                 }
-                printf("[TARE] %s\n", tare_ok ? "OK" : "FAILED");
-                stdio_flush();
                 break;
             }
             case ButtonAction::ShowFeedback:
@@ -510,7 +574,11 @@ int main() {
                 break;
             case ButtonAction::HideFeedback:
                 if (display_ok) {
-                    nav_screen.hide_critical_alert();
+                    if (!navigation_active) {
+                        nav_screen.show_ready_alert();
+                    } else {
+                        nav_screen.hide_critical_alert();
+                    }
                 }
                 break;
             case ButtonAction::Shutdown:
@@ -556,9 +624,7 @@ int main() {
                     sd_logger.sync();
                 } else {
                     /* Attempt recovery if in error state */
-                    if (sd_logger.try_recovery()) {
-                        sd_logger.log_event("SD_RECOVERED", combined_flags);
-                    }
+                    sd_logger.try_recovery();
                 }
             }
 
@@ -567,7 +633,7 @@ int main() {
 
             printf("[heartbeat] uptime=%lu ms  pos=(%.4f, %.4f, %.4f)  depth_z=%.4f  "
                    "dist=%.1f  flags=0x%02X  jitter=%lu/%lu/%lu us  drops=%lu  "
-                   "sd=%s rec=%lu/%lu  bat=%.2fV(%u%%)\n",
+                   "sd=%s rec=%lu/%lu  bat=%.2fV(%u%%)  btn_raw=%d\n",
                    static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())),
                    static_cast<double>(nav.pos_x),
                    static_cast<double>(nav.pos_y),
@@ -583,7 +649,8 @@ int main() {
                    static_cast<unsigned long>(sd_stats.records_written),
                    static_cast<unsigned long>(sd_stats.records_dropped),
                    static_cast<double>(battery.voltage()),
-                   battery.percent());
+                   battery.percent(),
+                   !gpio_get(TARE_BUTTON_PIN));
             stdio_flush();
             loop_count = 0;
         }

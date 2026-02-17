@@ -2,16 +2,36 @@ export function parseNavCSV(text) {
   const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
 
   if (lines.length < 2) {
-    throw new Error('CSV file is empty or missing header');
+    throw new Error('Nav file is empty or missing header');
   }
 
-  const header = lines[0];
+  // Extract metadata from leading comment lines
+  const metadata = {};
+  let dataStartIdx = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith('#')) {
+      const match = lines[i].match(/^#\s*(\w+)\s*=\s*(.+)/);
+      if (match) {
+        metadata[match[1]] = match[2].trim();
+      }
+      dataStartIdx = i + 1;
+    } else {
+      break;
+    }
+  }
+
+  const northOffsetRad = metadata.north_offset_rad !== undefined
+    ? parseFloat(metadata.north_offset_rad) : null;
+  const magAccuracy = metadata.mag_accuracy !== undefined
+    ? parseInt(metadata.mag_accuracy, 10) : null;
+
+  const header = lines[dataStartIdx];
   const expectedHeader = 'timestamp_ms,seq,angular_delta,qw,qx,qy,qz,px,py,pz,delta_dist,flags';
   if (header !== expectedHeader) {
-    throw new Error(`Invalid CSV header. Expected: ${expectedHeader}`);
+    throw new Error(`Invalid header. Expected: ${expectedHeader}`);
   }
 
-  const dataLines = lines.slice(1);
+  const dataLines = lines.slice(dataStartIdx + 1);
   const count = dataLines.length;
 
   const timestamps = new Float64Array(count);
@@ -27,7 +47,7 @@ export function parseNavCSV(text) {
     const parts = line.split(',');
 
     if (parts.length !== 12) {
-      throw new Error(`Invalid line ${i + 2}: expected 12 columns, got ${parts.length}`);
+      throw new Error(`Invalid line ${dataStartIdx + 2 + i}: expected 12 columns, got ${parts.length}`);
     }
 
     timestamps[i] = parseFloat(parts[0]);
@@ -47,7 +67,7 @@ export function parseNavCSV(text) {
 
     const flagStr = parts[11].trim();
     if (!flagStr.startsWith('0x')) {
-      throw new Error(`Invalid flag format at line ${i + 2}: ${flagStr}`);
+      throw new Error(`Invalid flag format at line ${dataStartIdx + 2 + i}: ${flagStr}`);
     }
     flags[i] = parseInt(flagStr, 16);
   }
@@ -60,6 +80,7 @@ export function parseNavCSV(text) {
     positions,
     deltaDistances,
     flags,
-    count
+    count,
+    metadata: { northOffsetRad, magAccuracy }
   };
 }

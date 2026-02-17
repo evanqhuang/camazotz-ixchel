@@ -13,13 +13,14 @@ export class StickMap {
     this.data = parsedData;
     this.stats = stats;
     this.colorMode = colorMode; // 'depth' | 'speed' | 'flags'
+    this.metadata = parsedData.metadata || {};
 
     // Canvas dimensions
     this.width = 3200;
     this.height = 2400;
-    this.titleHeight = 120;
-    this.footerHeight = 120;
-    this.legendWidth = 400;
+    this.titleHeight = 180;
+    this.footerHeight = 180;
+    this.legendWidth = 280;
     this.mapWidth = this.width - this.legendWidth;
     this.mapHeight = this.height - this.titleHeight - this.footerHeight;
 
@@ -368,15 +369,15 @@ export class StickMap {
     ctx.fillRect(0, 0, this.width, this.titleHeight);
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = 'bold 72px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Cave Dive Survey', this.width / 2, this.titleHeight / 2 - 10);
+    ctx.fillText('Cave Dive Survey', this.width / 2, this.titleHeight / 2 - 15);
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.font = '24px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = '36px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     const subtitle = `Duration: ${this._formatDuration(this.stats.duration)} | Samples: ${this.stats.sampleCount.toLocaleString()}`;
-    ctx.fillText(subtitle, this.width / 2, this.titleHeight / 2 + 30);
+    ctx.fillText(subtitle, this.width / 2, this.titleHeight / 2 + 45);
     ctx.restore();
   }
 
@@ -466,17 +467,17 @@ export class StickMap {
 
     ctx.fillStyle = '#0066cc';
     ctx.beginPath();
-    ctx.moveTo(c.x, c.y - 20);
-    ctx.lineTo(c.x - 15, c.y + 10);
-    ctx.lineTo(c.x + 15, c.y + 10);
+    ctx.moveTo(c.x, c.y - 30);
+    ctx.lineTo(c.x - 22, c.y + 15);
+    ctx.lineTo(c.x + 22, c.y + 15);
     ctx.closePath();
     ctx.fill();
 
     ctx.fillStyle = '#1a3a5c';
-    ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = 'bold 44px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText('ENTRY', c.x, c.y + 15);
+    ctx.fillText('ENTRY', c.x, c.y + 23);
     ctx.restore();
   }
 
@@ -533,7 +534,7 @@ export class StickMap {
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -546,8 +547,8 @@ export class StickMap {
       const c = this._toCanvas(x, y);
 
       const offsetDir = (idx % 2 === 0) ? -1 : 1;
-      const labelX = c.x + offsetDir * 100;
-      const labelY = c.y - 40;
+      const labelX = c.x + offsetDir * 150;
+      const labelY = c.y - 60;
 
       // Measure label pill for collision detection
       const displayDepth = convertValue('depth', ann.depth);
@@ -555,15 +556,15 @@ export class StickMap {
       const precision = getPrecision('depth');
       const text = `${displayDepth.toFixed(precision)} ${unit}`;
       const metrics = ctx.measureText(text);
-      const padding = 12;
+      const padding = 18;
       const pillWidth = metrics.width + padding * 2;
-      const pillHeight = 30;
+      const pillHeight = 45;
 
       const box = {
-        left: labelX - pillWidth / 2 - 4,
-        right: labelX + pillWidth / 2 + 4,
-        top: labelY - pillHeight / 2 - 4,
-        bottom: labelY + pillHeight / 2 + 4
+        left: labelX - pillWidth / 2 - 6,
+        right: labelX + pillWidth / 2 + 6,
+        top: labelY - pillHeight / 2 - 6,
+        bottom: labelY + pillHeight / 2 + 6
       };
       const overlaps = placedBoxes.some(pb =>
         box.left < pb.right && box.right > pb.left &&
@@ -606,41 +607,41 @@ export class StickMap {
    */
   _renderScaleBar(ctx) {
     ctx.save();
-    const targetPixels = 200;
+    const targetPixels = 300;
     const dataLength = targetPixels / this.scale;
     const niceLength = this._niceNumber(dataLength);
     const barPixels = niceLength * this.scale;
 
-    const x = this.width - 150;
-    const y = this.titleHeight + this.mapHeight - 80;
+    const x = this.width - 225;
+    const y = this.titleHeight + this.mapHeight - 120;
 
     ctx.strokeStyle = '#1a3a5c';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(x - barPixels / 2, y);
     ctx.lineTo(x + barPixels / 2, y);
     ctx.stroke();
 
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(x - barPixels / 2, y - 8);
-    ctx.lineTo(x - barPixels / 2, y + 8);
+    ctx.moveTo(x - barPixels / 2, y - 12);
+    ctx.lineTo(x - barPixels / 2, y + 12);
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.moveTo(x + barPixels / 2, y - 8);
-    ctx.lineTo(x + barPixels / 2, y + 8);
+    ctx.moveTo(x + barPixels / 2, y - 12);
+    ctx.lineTo(x + barPixels / 2, y + 12);
     ctx.stroke();
 
     ctx.fillStyle = '#1a3a5c';
-    ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = 'bold 38px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
 
     const displayLength = convertValue('distance', niceLength);
     const unit = getUnit('distance');
     const precision = getPrecision('distance');
-    ctx.fillText(`${displayLength.toFixed(precision)} ${unit}`, x, y - 15);
+    ctx.fillText(`${displayLength.toFixed(precision)} ${unit}`, x, y - 23);
     ctx.restore();
   }
 
@@ -649,22 +650,49 @@ export class StickMap {
    */
   _renderNorthArrow(ctx) {
     ctx.save();
-    const x = this.width - 100;
-    const y = this.titleHeight + 100;
+    const x = this.width - 150;
+    const y = this.titleHeight + 150;
 
+    const northOffset = this.metadata.northOffsetRad;
+    const hasValidOffset = northOffset !== null && northOffset !== undefined && isFinite(northOffset);
+
+    if (hasValidOffset) {
+      // Arrow starts pointing up (+Y = pi/2 from +X in math convention).
+      // North is at northOffsetRad from +X.
+      // Canvas rotate() is CW-positive, so rotation = pi/2 - northOffset.
+      const rotation = Math.PI / 2 - northOffset;
+      ctx.translate(x, y);
+      ctx.rotate(rotation);
+      ctx.translate(-x, -y);
+    }
+
+    // Arrow shape (rotated with transform)
     ctx.fillStyle = '#1a3a5c';
     ctx.beginPath();
-    ctx.moveTo(x, y - 40);
-    ctx.lineTo(x - 15, y + 10);
+    ctx.moveTo(x, y - 60);
+    ctx.lineTo(x - 22, y + 15);
     ctx.lineTo(x, y);
-    ctx.lineTo(x + 15, y + 10);
+    ctx.lineTo(x + 22, y + 15);
     ctx.closePath();
     ctx.fill();
 
-    ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.restore();
+
+    // "N" label and accuracy indicator (always upright, outside rotation)
+    ctx.save();
+    ctx.fillStyle = '#1a3a5c';
+    ctx.font = 'bold 56px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText('N', x, y + 15);
+    ctx.fillText('N', x, y + 23);
+
+    const magAcc = this.metadata.magAccuracy;
+    if (magAcc !== null && magAcc !== undefined && magAcc < 2) {
+      ctx.font = '34px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.fillStyle = '#cc6600';
+      ctx.fillText('~', x + 38, y - 30);
+    }
+
     ctx.restore();
   }
 
@@ -673,54 +701,54 @@ export class StickMap {
    */
   _renderLegend(ctx) {
     ctx.save();
-    const x = 20;
-    let y = this.titleHeight + 40;
+    const x = 80;
+    let y = this.titleHeight + 60;
 
     ctx.fillStyle = '#1a3a5c';
-    ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = 'bold 64px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('Legend', x, y);
 
-    y += 60;
+    y += 120;
 
     // Color gradient or flag key
     if (this.colorMode === 'depth' || this.colorMode === 'speed') {
       this._renderGradientBar(ctx, x, y);
-      y += 280;
+      y += 380;
     } else if (this.colorMode === 'flags') {
       this._renderFlagKey(ctx, x, y);
-      y += 200;
+      y += 280;
     }
 
     // Symbols section
-    y += 40;
-    ctx.fillStyle = '#1a3a5c';
-    ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.fillText('Symbols', x, y);
     y += 50;
+    ctx.fillStyle = '#1a3a5c';
+    ctx.font = 'bold 50px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.fillText('Symbols', x, y);
+    y += 80;
 
     ctx.fillStyle = '#0066cc';
     ctx.beginPath();
-    ctx.moveTo(x + 15, y - 10);
-    ctx.lineTo(x, y + 10);
-    ctx.lineTo(x + 30, y + 10);
+    ctx.moveTo(x + 22, y - 15);
+    ctx.lineTo(x, y + 15);
+    ctx.lineTo(x + 45, y + 15);
     ctx.closePath();
     ctx.fill();
 
     ctx.fillStyle = '#333333';
-    ctx.font = '20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.fillText('Entrance', x + 50, y);
-    y += 60;
+    ctx.font = '38px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.fillText('Entrance', x + 75, y);
+    y += 90;
 
     // Dive statistics
     ctx.fillStyle = '#1a3a5c';
-    ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = 'bold 50px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.fillText('Dive Statistics', x, y);
-    y += 50;
+    y += 85;
 
     ctx.fillStyle = '#333333';
-    ctx.font = '20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = '38px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
     const stats = [
       ['Distance', convertValue('distance', this.stats.totalDistance), getUnit('distance'), getPrecision('distance')],
@@ -735,7 +763,7 @@ export class StickMap {
       const displayValue = typeof value === 'number' && precision > 0 ? value.toFixed(precision) : value;
       const text = unit ? `${label}: ${displayValue} ${unit}` : `${label}: ${displayValue}`;
       ctx.fillText(text, x, y);
-      y += 35;
+      y += 55;
     });
     ctx.restore();
   }
@@ -745,8 +773,8 @@ export class StickMap {
    */
   _renderGradientBar(ctx, x, y) {
     ctx.save();
-    const barWidth = 60;
-    const barHeight = 200;
+    const barWidth = 90;
+    const barHeight = 300;
 
     const gradient = ctx.createLinearGradient(x, y, x, y + barHeight);
 
@@ -764,7 +792,7 @@ export class StickMap {
     ctx.strokeRect(x, y, barWidth, barHeight);
 
     ctx.fillStyle = '#333333';
-    ctx.font = '18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = '34px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
@@ -776,16 +804,16 @@ export class StickMap {
       const unit = getUnit('depth');
       const precision = getPrecision('depth');
 
-      ctx.fillText(`${minDisplay.toFixed(precision)} ${unit}`, x + barWidth + 10, y);
-      ctx.fillText(`${maxDisplay.toFixed(precision)} ${unit}`, x + barWidth + 10, y + barHeight);
+      ctx.fillText(`${minDisplay.toFixed(precision)} ${unit}`, x + barWidth + 15, y);
+      ctx.fillText(`${maxDisplay.toFixed(precision)} ${unit}`, x + barWidth + 15, y + barHeight);
     } else if (this.colorMode === 'speed') {
       const minDisplay = convertValue('speed', this.speedP5);
       const maxDisplay = convertValue('speed', this.speedP95);
       const unit = getUnit('speed');
       const precision = getPrecision('speed');
 
-      ctx.fillText(`${minDisplay.toFixed(precision)} ${unit}`, x + barWidth + 10, y);
-      ctx.fillText(`${maxDisplay.toFixed(precision)} ${unit}`, x + barWidth + 10, y + barHeight);
+      ctx.fillText(`${minDisplay.toFixed(precision)} ${unit}`, x + barWidth + 15, y);
+      ctx.fillText(`${maxDisplay.toFixed(precision)} ${unit}`, x + barWidth + 15, y + barHeight);
     }
     ctx.restore();
   }
@@ -801,18 +829,18 @@ export class StickMap {
       { label: 'Critical', color: '#cc0000' }
     ];
 
-    ctx.font = '20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = '38px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
     items.forEach((item, idx) => {
-      const itemY = y + idx * 50;
+      const itemY = y + idx * 75;
 
       ctx.fillStyle = item.color;
-      ctx.fillRect(x, itemY - 12, 30, 24);
+      ctx.fillRect(x, itemY - 18, 45, 36);
 
       ctx.fillStyle = '#333333';
-      ctx.fillText(item.label, x + 45, itemY);
+      ctx.fillText(item.label, x + 68, itemY);
     });
     ctx.restore();
   }
@@ -848,7 +876,7 @@ export class StickMap {
     ctx.fillRect(0, y, this.width, this.footerHeight);
 
     ctx.fillStyle = '#666666';
-    ctx.font = '24px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.font = '36px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('Camazotz Ixchel Dive Visualizer', this.width / 2, y + this.footerHeight / 2);

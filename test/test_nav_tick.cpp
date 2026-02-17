@@ -2335,3 +2335,50 @@ TEST(NavTickUpdate_ConflictDetection_Integration, WindowResetOnSensorFailure) {
     EXPECT_FLOAT_NEAR(state.accumulated_accel_magnitude, 0.0f);
     EXPECT_EQ(state.conflict_window_count, 0);
 }
+
+// ============================================================================
+// Test Suite: NavTickUpdate_PositionReset
+// ============================================================================
+
+TEST(NavTickUpdate_PositionReset, PositionResetsToZeroThenContinues) {
+    NavTickState state = {};
+    nav_state_compact_t out = {};
+    SensorSnapshot snap = {
+        .encoder_delta = 1.0f,
+        .encoder_valid = true,
+        .imu_quaternion = {1.0f, 0.0f, 0.0f, 0.0f},
+        .imu_angular_velocity = {0.0f, 0.0f, 0.0f},
+        .imu_linear_accel = {0.0f, 0.0f, 0.0f},
+        .imu_valid = true
+    };
+
+    /* Accumulate 10 ticks of forward motion */
+    for (int i = 0; i < 10; i++) {
+        nav_tick_update(state, snap, &out);
+    }
+
+    double pos_before = state.pos_x;
+    EXPECT_GT(pos_before, 0.0);
+    EXPECT_NEAR(pos_before, 10.0 * 1.0 * ENCODER_WHEEL_RADIUS_M, 1e-6);
+
+    /* Simulate position reset (what Core 1 does on button press) */
+    state.pos_x = 0.0;
+    state.pos_y = 0.0;
+    state.pos_z = 0.0;
+    state.total_distance = 0.0;
+
+    /* One more tick should produce exactly one step from zero */
+    nav_tick_update(state, snap, &out);
+    double expected = 1.0 * ENCODER_WHEEL_RADIUS_M;
+    EXPECT_NEAR(state.pos_x, expected, 1e-6);
+    EXPECT_NEAR(state.total_distance, expected, 1e-6);
+
+    /* Output compact should also reflect the reset position */
+    EXPECT_NEAR(out.pos_x, static_cast<float>(expected), 1e-4f);
+
+    /* With identity quaternion, Y and Z must remain zero after reset */
+    EXPECT_NEAR(state.pos_y, 0.0, 1e-6);
+    EXPECT_NEAR(state.pos_z, 0.0, 1e-6);
+    EXPECT_NEAR(out.pos_y, 0.0f, 1e-4f);
+    EXPECT_NEAR(out.pos_z, 0.0f, 1e-4f);
+}

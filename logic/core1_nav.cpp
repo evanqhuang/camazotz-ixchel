@@ -19,6 +19,8 @@ static nav_state_compact_t shared_state = {};
 static JitterStats jitter = {};
 static uint32_t dropped_frames = 0;
 static uint32_t sequence_num = 0;
+static volatile bool position_reset_requested = false;
+static volatile bool tare_requested = false;
 
 __not_in_flash_func(void) core1_entry() {
     uint32_t data = multicore_fifo_pop_blocking();
@@ -53,6 +55,25 @@ __not_in_flash_func(void) core1_entry() {
             watchdog_update();
             imu->hardware_reset();
             state.action_flags &= ~NAV_ACTION_IMU_RESET;
+        }
+
+        /* Handle tare request from Core 0 — must run on Core 1
+         * since Core 1 owns the IMU I2C bus. */
+        if (tare_requested) {
+            imu->tare_now();
+            tare_requested = false;
+        }
+
+        if (position_reset_requested) {
+            state.pos_x = 0.0;
+            state.pos_y = 0.0;
+            state.pos_z = 0.0;
+            state.total_distance = 0.0;
+            compact.pos_x = 0.0f;
+            compact.pos_y = 0.0f;
+            compact.pos_z = 0.0f;
+            compact.delta_dist = 0.0f;
+            position_reset_requested = false;
         }
 
         uint32_t irq_state = spin_lock_blocking(nav_lock);
@@ -94,4 +115,14 @@ JitterStats core1_get_jitter_stats() {
 
 uint32_t core1_get_dropped_frames() {
     return dropped_frames;
+}
+
+void core1_request_position_reset() {
+    position_reset_requested = true;
+    __dmb();
+}
+
+void core1_request_tare() {
+    tare_requested = true;
+    __dmb();
 }

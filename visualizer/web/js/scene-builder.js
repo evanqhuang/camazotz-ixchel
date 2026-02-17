@@ -367,7 +367,7 @@ export class SceneBuilder {
     const texture = new THREE.CanvasTexture(canvas);
     const material = new THREE.SpriteMaterial({ map: texture });
     const sprite = new THREE.Sprite(material);
-    sprite.scale.set(6, 3, 1);
+    sprite.scale.set(12, 6, 1);
 
     return sprite;
   }

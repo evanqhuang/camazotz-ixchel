@@ -263,7 +263,8 @@ export function generateSampleDiveCSV() {
   const noisePhases = Array(4).fill(0).map(() => randomFloat(0, Math.PI * 2));
 
   // Build CSV
-  const header = 'timestamp_ms,seq,angular_delta,qw,qx,qy,qz,px,py,pz,delta_dist,flags';
+  // Sample data uses math convention (+X=East, +Y=North), so north is at pi/2
+  const header = '# north_offset_rad=1.5707963\n# mag_accuracy=3\ntimestamp_ms,seq,angular_delta,qw,qx,qy,qz,px,py,pz,delta_dist,flags';
   const rows = [header];
 
   let currentSegmentIdx = 0;

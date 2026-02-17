@@ -43,6 +43,22 @@ SDIO_Logger::~SDIO_Logger() {
     deinit();
 }
 
+bool SDIO_Logger::start_logging(const NavLogMetadata& meta) {
+    if (logging_active_ || !mounted_ || critical_error_) {
+        return false;
+    }
+
+    metadata_ = meta;
+
+    if (!create_files()) {
+        critical_error_ = true;
+        return false;
+    }
+
+    logging_active_ = true;
+    return true;
+}
+
 bool SDIO_Logger::init() {
     stats_ = {};  /* Reset statistics */
 
@@ -53,12 +69,6 @@ bool SDIO_Logger::init() {
 
     /* Scan existing files to determine next index */
     boot_count_ = find_next_index();
-
-    if (!create_files()) {
-        deinit();
-        critical_error_ = true;
-        return false;
-    }
 
     mounted_ = true;
     stats_.mounted = true;
@@ -89,6 +99,7 @@ void SDIO_Logger::deinit() {
     }
 
     mounted_ = false;
+    logging_active_ = false;
     stats_.mounted = false;
 }
 
@@ -187,10 +198,34 @@ bool SDIO_Logger::create_files() {
 
 bool SDIO_Logger::write_nav_header() {
     FIL* fil = static_cast<FIL*>(nav_file_);
-    const char* header = "timestamp_ms,seq,angular_delta,qw,qx,qy,qz,px,py,pz,delta_dist,flags\n";
-
+    char line[128];
     UINT bw;
-    FRESULT fr = f_write(fil, header, strlen(header), &bw);
+    FRESULT fr;
+
+    /* Metadata comment lines */
+    int len = snprintf(line, sizeof(line), "# north_offset_rad=%.7f\n",
+                       metadata_.north_offset_rad);
+    if (len > 0 && len < static_cast<int>(sizeof(line))) {
+        fr = f_write(fil, line, static_cast<UINT>(len), &bw);
+        if (fr != FR_OK || bw != static_cast<UINT>(len)) {
+            printf("[SD] Metadata write failed: %s (%d)\n", FRESULT_str(fr), fr);
+            return false;
+        }
+    }
+
+    len = snprintf(line, sizeof(line), "# mag_accuracy=%u\n",
+                   static_cast<unsigned>(metadata_.mag_accuracy));
+    if (len > 0 && len < static_cast<int>(sizeof(line))) {
+        fr = f_write(fil, line, static_cast<UINT>(len), &bw);
+        if (fr != FR_OK || bw != static_cast<UINT>(len)) {
+            printf("[SD] Metadata write failed: %s (%d)\n", FRESULT_str(fr), fr);
+            return false;
+        }
+    }
+
+    /* Column header */
+    const char* header = "timestamp_ms,seq,angular_delta,qw,qx,qy,qz,px,py,pz,delta_dist,flags\n";
+    fr = f_write(fil, header, strlen(header), &bw);
     if (fr != FR_OK || bw != strlen(header)) {
         printf("[SD] Header write failed: %s (%d)\n", FRESULT_str(fr), fr);
         return false;
@@ -216,7 +251,7 @@ bool SDIO_Logger::write_event_header() {
  *============================================================================*/
 
 bool SDIO_Logger::log_state(const nav_state_compact_t& state) {
-    if (!mounted_ || critical_error_) {
+    if (!logging_active_ || !mounted_ || critical_error_) {
         return false;
     }
 
@@ -252,7 +287,7 @@ bool SDIO_Logger::log_state(const nav_state_compact_t& state) {
 }
 
 bool SDIO_Logger::log_event(const char* tag, uint8_t flags) {
-    if (!mounted_ || critical_error_ || tag == nullptr) {
+    if (!logging_active_ || !mounted_ || critical_error_ || tag == nullptr || event_file_ == nullptr) {
         return false;
     }
 
@@ -480,13 +515,14 @@ bool SDIO_Logger::try_recovery() {
     }
     event_file_ = &event_fil;
 
-    /* Log recovery event */
-    log_event("SD_RECOVERED", 0);
-
+    /* Restore state flags before logging recovery event */
     mounted_ = true;
     critical_error_ = false;
     stats_.mounted = true;
     stats_.critical_error = false;
+    /* logging_active_ retains its pre-error value — only true if start_logging() was called */
+
+    log_event("SD_RECOVERED", 0);
 
     printf("[SD] Recovery successful\n");
     return true;
@@ -543,4 +579,8 @@ LoggerStats SDIO_Logger::get_stats() const {
 
 bool SDIO_Logger::is_operational() const {
     return mounted_ && !critical_error_;
+}
+
+bool SDIO_Logger::is_logging() const {
+    return logging_active_;
 }

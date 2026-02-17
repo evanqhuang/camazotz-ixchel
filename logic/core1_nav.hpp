@@ -28,5 +28,7 @@ void core1_entry();
 nav_state_compact_t core1_get_nav_state();
 JitterStats core1_get_jitter_stats();
 uint32_t core1_get_dropped_frames();
+void core1_request_position_reset();
+void core1_request_tare();
 
 #endif // CORE1_NAV_HPP

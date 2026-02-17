@@ -315,6 +315,7 @@ void Nav_Screen::update(float heading_deg, float depth_m, float pos_x, float pos
 }
 
 void Nav_Screen::show_critical_alert(const char *msg) {
+    lv_obj_set_style_bg_color(alert_box_, COLOR_RED, LV_PART_MAIN);
     lv_label_set_text(alert_label_, msg);
     lv_obj_clear_flag(alert_box_, LV_OBJ_FLAG_HIDDEN);
 }
@@ -329,6 +330,26 @@ void Nav_Screen::show_tare_status(bool success, uint32_t now_ms) {
     lv_label_set_text(tare_label_, success ? "Tare OK" : "Tare FAIL");
     lv_obj_clear_flag(tare_box_, LV_OBJ_FLAG_HIDDEN);
     tare_show_ms_ = now_ms;
+}
+
+void Nav_Screen::show_tare_locked(uint32_t now_ms) {
+    lv_obj_set_style_bg_color(tare_box_, COLOR_YELLOW, LV_PART_MAIN);
+    lv_label_set_text(tare_label_, "Tare LOCKED");
+    lv_obj_clear_flag(tare_box_, LV_OBJ_FLAG_HIDDEN);
+    tare_show_ms_ = now_ms;
+}
+
+void Nav_Screen::show_ready_alert() {
+    lv_obj_set_style_bg_color(alert_box_, LV_COLOR_MAKE(0x00, 0x60, 0xCC), LV_PART_MAIN);
+    lv_label_set_text(alert_label_, "Press to Start");
+    lv_obj_clear_flag(alert_box_, LV_OBJ_FLAG_HIDDEN);
+}
+
+void Nav_Screen::reset_trail() {
+    trail_.clear();
+    lv_obj_add_flag(start_marker_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(pos_dot_, LV_OBJ_FLAG_HIDDEN);
+    lv_line_set_points(trail_line_, nullptr, 0);
 }
 
 void Nav_Screen::update_sensor_status(lv_obj_t *label, const char *prefix,

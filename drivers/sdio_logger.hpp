@@ -25,6 +25,11 @@ struct LoggerStats {
     bool critical_error;           /* Unrecoverable error state */
 };
 
+struct NavLogMetadata {
+    double north_offset_rad;  /* Magnetic heading at tare time (radians) */
+    uint8_t mag_accuracy;     /* 0-3 magnetometer accuracy at tare */
+};
+
 /*============================================================================
  * SDIO Logger Class
  *============================================================================*/
@@ -102,6 +107,20 @@ public:
      */
     bool is_operational() const;
 
+    /**
+     * @brief Start logging by creating files with metadata.
+     * Called at dive start, not at boot. init() must be called first.
+     * @param meta Navigation metadata (heading, accuracy) for file header
+     * @return true if files created successfully
+     */
+    bool start_logging(const NavLogMetadata& meta);
+
+    /**
+     * @brief Check if logging is currently active (files created and open).
+     * @return true if start_logging() succeeded and files are open
+     */
+    bool is_logging() const;
+
 private:
     /* Ring buffer record (internal format, 48 bytes) */
     struct LogRecord {
@@ -159,6 +178,8 @@ private:
     uint32_t event_sequence_ = 0;
     bool mounted_ = false;
     bool critical_error_ = false;
+    bool logging_active_ = false;
+    NavLogMetadata metadata_ = {};
 
     /* Statistics */
     mutable LoggerStats stats_ = {};
